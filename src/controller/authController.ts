@@ -10,6 +10,7 @@ dotenv.config();
 //************************ MAIN CONTROLLER ******************************
 
 import crypto from "crypto";
+import { userInfoModel } from "../models/user-info-schema";
 
 export const socialLogin = async (req: Request, res: Response) => {
     try {
@@ -92,6 +93,8 @@ export const socialLogin = async (req: Request, res: Response) => {
             { expiresIn: "365d" }
         );
 
+        const userInfo = await userInfoModel.findOne({ userId: user._id });
+
         const responseUser = {
             _id: user._id,
             firstName: user.firstName,
@@ -103,6 +106,7 @@ export const socialLogin = async (req: Request, res: Response) => {
             fcmToken: user.fcmToken,
             referralCode: user.referralCode, // RETURN REFERRAL CODE
             token,
+            userInfo: userInfo || null,
         };
 
         return OK(res, responseUser);
