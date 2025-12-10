@@ -15,7 +15,7 @@ export const addUpdateUserInfo = async (req: Request, res: Response) => {
         });
 
         if (existingVehicle) {
-            return BADREQUEST(res, "Vehicle already registered by another user");
+            return BADREQUEST(res, "Vehicle already registered");
         }
 
         let userInfo = await userInfoModel.findOne({ userId: id });

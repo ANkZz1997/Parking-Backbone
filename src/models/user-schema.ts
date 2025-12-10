@@ -15,29 +15,8 @@ export interface IUser extends Document {
   isDeleted: boolean;
   token: string;
   password: string;
+  referralCode?: string;
 }
-
-const VehicleSchema = new Schema(
-  {
-    wheelType: {
-      type: Number,
-      enum: [2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20],
-      required: true,
-    },
-    vehicleNumber: {
-      type: String,
-      required: true,
-    },
-    vehicleRegistration: {
-      type: String,
-      required: true,
-    },
-    isVerified: {
-      type: Boolean,
-      default: false,
-    },
-  },
-);
 
 const UserSchema: Schema = new Schema<IUser>(
   {
@@ -91,6 +70,7 @@ const UserSchema: Schema = new Schema<IUser>(
     },
     token: {type: String},
     password: { type: String },
+    referralCode: { type: String  }
   },
   { timestamps: true }
 );

@@ -9,6 +9,8 @@ dotenv.config();
 
 //************************ MAIN CONTROLLER ******************************
 
+import crypto from "crypto";
+
 export const socialLogin = async (req: Request, res: Response) => {
     try {
         let {
@@ -45,7 +47,24 @@ export const socialLogin = async (req: Request, res: Response) => {
             isDeleted: false,
         });
 
+        // === GENERATE UNIQUE REFERRAL CODE ===
+        const generateUniqueReferral = async () => {
+            let code;
+            let exists = true;
+
+            while (exists) {
+                code = crypto.randomBytes(4).toString("hex").toUpperCase(); // e.g., "A3F92CDE"
+                const found = await userModel.findOne({ referralCode: code });
+                if (!found) exists = false;
+            }
+
+            return code;
+        };
+
+        // === CREATE USER IF NOT EXIST ===
         if (!user) {
+            const referralCode = await generateUniqueReferral();
+
             user = await userModel.create({
                 firstName,
                 lastName,
@@ -53,16 +72,20 @@ export const socialLogin = async (req: Request, res: Response) => {
                 email,
                 deviceType,
                 fcmToken: [fcmToken],
+                phoneNumber,
+                referralCode, // NEW FIELD
                 vehicle: [],
                 emergencyContact: null,
             });
         }
 
+        // === UPDATE FCM TOKEN ===
         if (!user.fcmToken.includes(fcmToken)) {
             user.fcmToken.push(fcmToken);
             await user.save();
         }
 
+        // === JWT ===
         const token = jwt.sign(
             { userId: user._id.toString(), email },
             process.env.JWT_SECRET || "123",
@@ -78,6 +101,7 @@ export const socialLogin = async (req: Request, res: Response) => {
             phoneNumber: user.phoneNumber,
             deviceType: user.deviceType,
             fcmToken: user.fcmToken,
+            referralCode: user.referralCode, // RETURN REFERRAL CODE
             token,
         };
 
@@ -87,6 +111,7 @@ export const socialLogin = async (req: Request, res: Response) => {
         return INTERNAL_SERVER_ERROR(res);
     }
 };
+
 
 
 

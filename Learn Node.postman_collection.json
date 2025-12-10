@@ -1,0 +1,438 @@
+{
+	"info": {
+		"_postman_id": "d76c24cb-54c1-41c8-a62a-c81a0dd32a35",
+		"name": "Learn Node",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "33697665",
+		"_collection_link": "https://orange-shuttle-85572.postman.co/workspace/New-Team-Workspace~56e0f0cf-90da-4ea7-9330-ebb159d5c9c3/collection/33697665-d76c24cb-54c1-41c8-a62a-c81a0dd32a35?action=share&source=collection_link&creator=33697665"
+	},
+	"item": [
+		{
+			"name": "Social-Login",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"firstName\": \"Ankit\",\n  \"lastName\": \"Sharma\",\n  \"fullName\": \"Ankita Sharma\",\n  \"phoneNumber\":\"9882211037\",\n  \"deviceType\":\"ANDROID\", //[\"IOS\", \"ANDROID\", \"WEB\"]\n  \"email\": \"ankit@example.com\",\n  \"password\": \"123456\",\n  \"fcmToken\":\"Sample-FCM\" //Anything in dev\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{URL}}/api/auth/socialLogin",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"api",
+						"auth",
+						"socialLogin"
+					]
+				}
+			},
+			"response": [
+				{
+					"name": "res",
+					"originalRequest": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"firstName\": \"Ankit\",\n  \"lastName\": \"Sharma\",\n  \"fullName\": \"Ankita Sharma\",\n  \"phoneNumber\":\"9882211037\",\n  \"deviceType\":\"ANDROID\", //[\"IOS\", \"ANDROID\", \"WEB\"]\n  \"email\": \"ankit@example.com\",\n  \"password\": \"123456\",\n  \"fcmToken\":\"Sample-FCM\" //Anything in dev\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{URL}}/api/auth/socialLogin",
+							"host": [
+								"{{URL}}"
+							],
+							"path": [
+								"api",
+								"auth",
+								"socialLogin"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": null,
+					"header": [
+						{
+							"key": "X-Powered-By",
+							"value": "Express"
+						},
+						{
+							"key": "Access-Control-Allow-Origin",
+							"value": "*"
+						},
+						{
+							"key": "Access-Control-Allow-Credentials",
+							"value": "true"
+						},
+						{
+							"key": "Content-Type",
+							"value": "application/json; charset=utf-8"
+						},
+						{
+							"key": "Content-Length",
+							"value": "498"
+						},
+						{
+							"key": "ETag",
+							"value": "W/\"1f2-M+PsmYTJFhI5iFfP1H1AmKtVzN4\""
+						},
+						{
+							"key": "Date",
+							"value": "Wed, 10 Dec 2025 16:36:54 GMT"
+						},
+						{
+							"key": "Connection",
+							"value": "keep-alive"
+						},
+						{
+							"key": "Keep-Alive",
+							"value": "timeout=5"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"success\": true,\n    \"message\": \"Success\",\n    \"data\": {\n        \"_id\": \"6939a1a5462aff168c9fa301\",\n        \"firstName\": \"Ankit\",\n        \"lastName\": \"Sharma\",\n        \"fullName\": \"Ankit Sharma\",\n        \"email\": \"ankit@example.com\",\n        \"phoneNumber\": \"9882211037\",\n        \"deviceType\": \"ANDROID\",\n        \"fcmToken\": [\n            \"Sample-FCM\"\n        ],\n        \"referralCode\": \"B02A8426\",\n        \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2OTM5YTFhNTQ2MmFmZjE2OGM5ZmEzMDEiLCJlbWFpbCI6ImFua2l0QGV4YW1wbGUuY29tIiwiaWF0IjoxNzY1Mzg0NjE0LCJleHAiOjE3OTY5MjA2MTR9.awFx751SCns-eaBBot5y41tdkClKHlQzsw77gKgXs70\"\n    }\n}"
+				}
+			]
+		},
+		{
+			"name": "User-Info",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2OTM5YTFhNTQ2MmFmZjE2OGM5ZmEzMDEiLCJlbWFpbCI6ImFua2l0QGV4YW1wbGUuY29tIiwiaWF0IjoxNzY1Mzg0NjE0LCJleHAiOjE3OTY5MjA2MTR9.awFx751SCns-eaBBot5y41tdkClKHlQzsw77gKgXs70",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"emergencyContact\": \"9318593888\",\n    \"wheelType\": 2, // [2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20],\n    \"vehicleRegistration\": \"HP33E9771\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{URL}}/api/user/userInfo",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"api",
+						"user",
+						"userInfo"
+					]
+				}
+			},
+			"response": [
+				{
+					"name": "res-1st vehicle",
+					"originalRequest": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"emergencyContact\": \"9318593888\",\n    \"wheelType\": 2, // [2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20],\n    \"vehicleRegistration\": \"HP33E9771\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{URL}}/api/user/userInfo",
+							"host": [
+								"{{URL}}"
+							],
+							"path": [
+								"api",
+								"user",
+								"userInfo"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": null,
+					"header": [
+						{
+							"key": "X-Powered-By",
+							"value": "Express"
+						},
+						{
+							"key": "Access-Control-Allow-Origin",
+							"value": "*"
+						},
+						{
+							"key": "Access-Control-Allow-Credentials",
+							"value": "true"
+						},
+						{
+							"key": "Content-Type",
+							"value": "application/json; charset=utf-8"
+						},
+						{
+							"key": "Content-Length",
+							"value": "345"
+						},
+						{
+							"key": "ETag",
+							"value": "W/\"159-IqSRZuj8wkLAHYyh1GiTTm6793M\""
+						},
+						{
+							"key": "Date",
+							"value": "Wed, 10 Dec 2025 16:42:24 GMT"
+						},
+						{
+							"key": "Connection",
+							"value": "keep-alive"
+						},
+						{
+							"key": "Keep-Alive",
+							"value": "timeout=5"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"success\": true,\n    \"message\": \"Success\",\n    \"data\": {\n        \"userId\": \"6939a1a5462aff168c9fa301\",\n        \"emergencyContact\": \"9318593888\",\n        \"vehicle\": [\n            {\n                \"wheelType\": 2,\n                \"vehicleRegistration\": \"HP33E9771\",\n                \"isVerified\": true,\n                \"_id\": \"6939a2f0311d1a740656735d\"\n            }\n        ],\n        \"_id\": \"6939a2f0311d1a740656735c\",\n        \"createdAt\": \"2025-12-10T16:42:24.778Z\",\n        \"updatedAt\": \"2025-12-10T16:42:24.778Z\",\n        \"__v\": 0\n    }\n}"
+				},
+				{
+					"name": "res-2nd vehicle",
+					"originalRequest": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    // \"emergencyContact\": \"9318593888\", Not required for 2nd vehicle\n    \"wheelType\": 2, // [2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20],\n    \"vehicleRegistration\": \"HP33E9770\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{URL}}/api/user/userInfo",
+							"host": [
+								"{{URL}}"
+							],
+							"path": [
+								"api",
+								"user",
+								"userInfo"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": null,
+					"header": [
+						{
+							"key": "X-Powered-By",
+							"value": "Express"
+						},
+						{
+							"key": "Access-Control-Allow-Origin",
+							"value": "*"
+						},
+						{
+							"key": "Access-Control-Allow-Credentials",
+							"value": "true"
+						},
+						{
+							"key": "Content-Type",
+							"value": "application/json; charset=utf-8"
+						},
+						{
+							"key": "Content-Length",
+							"value": "446"
+						},
+						{
+							"key": "ETag",
+							"value": "W/\"1be-ToylX15GP8DNVjcZfsJbHEowbHg\""
+						},
+						{
+							"key": "Date",
+							"value": "Wed, 10 Dec 2025 16:44:00 GMT"
+						},
+						{
+							"key": "Connection",
+							"value": "keep-alive"
+						},
+						{
+							"key": "Keep-Alive",
+							"value": "timeout=5"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"success\": true,\n    \"message\": \"Success\",\n    \"data\": {\n        \"_id\": \"6939a2f0311d1a740656735c\",\n        \"userId\": \"6939a1a5462aff168c9fa301\",\n        \"emergencyContact\": \"9318593888\",\n        \"vehicle\": [\n            {\n                \"wheelType\": 2,\n                \"vehicleRegistration\": \"HP33E9771\",\n                \"isVerified\": true,\n                \"_id\": \"6939a2f0311d1a740656735d\"\n            },\n            {\n                \"wheelType\": 2,\n                \"vehicleRegistration\": \"HP33E9770\",\n                \"isVerified\": true,\n                \"_id\": \"6939a350311d1a7406567366\"\n            }\n        ],\n        \"createdAt\": \"2025-12-10T16:42:24.778Z\",\n        \"updatedAt\": \"2025-12-10T16:44:00.010Z\",\n        \"__v\": 1\n    }\n}"
+				}
+			]
+		},
+		{
+			"name": "Delete-vehicle",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2OTE5YWNiZDIwMTUyN2Y5YTBmZGM3ODYiLCJlbWFpbCI6ImFua2l0YTEyM0BleGFtcGxlLmNvbSIsImlhdCI6MTc2MzI5MDMwMSwiZXhwIjoxNzk0ODI2MzAxfQ.G5_Zp47vDM2NyhwjiTkJvxSyiHvLO1FcCI9S_xmjejg",
+							"type": "string"
+						}
+					]
+				},
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "{{URL}}/api/user/delete-vehicle?id=6919ad485857a98768163dd7",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"api",
+						"user",
+						"delete-vehicle"
+					],
+					"query": [
+						{
+							"key": "id",
+							"value": "6919ad485857a98768163dd7"
+						}
+					]
+				}
+			},
+			"response": [
+				{
+					"name": "res",
+					"originalRequest": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{URL}}/api/user/delete-vehicle?id=6939a350311d1a7406567366",
+							"host": [
+								"{{URL}}"
+							],
+							"path": [
+								"api",
+								"user",
+								"delete-vehicle"
+							],
+							"query": [
+								{
+									"key": "id",
+									"value": "6939a350311d1a7406567366",
+									"description": "vehicle id"
+								}
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": null,
+					"header": [
+						{
+							"key": "X-Powered-By",
+							"value": "Express"
+						},
+						{
+							"key": "Access-Control-Allow-Origin",
+							"value": "*"
+						},
+						{
+							"key": "Access-Control-Allow-Credentials",
+							"value": "true"
+						},
+						{
+							"key": "Content-Type",
+							"value": "application/json; charset=utf-8"
+						},
+						{
+							"key": "Content-Length",
+							"value": "59"
+						},
+						{
+							"key": "ETag",
+							"value": "W/\"3b-gijcJSh2rOY0XxajN16v8OgHPGY\""
+						},
+						{
+							"key": "Date",
+							"value": "Wed, 10 Dec 2025 16:45:52 GMT"
+						},
+						{
+							"key": "Connection",
+							"value": "keep-alive"
+						},
+						{
+							"key": "Keep-Alive",
+							"value": "timeout=5"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"success\": true,\n    \"message\": \"Deleted Successfully\",\n    \"data\": {}\n}"
+				}
+			]
+		},
+		{
+			"name": "Search-vehicle",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2OTE5YWNiZDIwMTUyN2Y5YTBmZGM3ODYiLCJlbWFpbCI6ImFua2l0YTEyM0BleGFtcGxlLmNvbSIsImlhdCI6MTc2MzI5MDMwMSwiZXhwIjoxNzk0ODI2MzAxfQ.G5_Zp47vDM2NyhwjiTkJvxSyiHvLO1FcCI9S_xmjejg",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"vehicleRegistration\":\"HP33E9770\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{URL}}/api/user/search-vehicle",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"api",
+						"user",
+						"search-vehicle"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "baseURL",
+			"value": "",
+			"type": "default"
+		}
+	]
+}
