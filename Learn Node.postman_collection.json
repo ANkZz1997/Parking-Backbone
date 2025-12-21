@@ -82,15 +82,15 @@
 						},
 						{
 							"key": "Content-Length",
-							"value": "498"
+							"value": "811"
 						},
 						{
 							"key": "ETag",
-							"value": "W/\"1f2-M+PsmYTJFhI5iFfP1H1AmKtVzN4\""
+							"value": "W/\"32b-/lXzSp4Xc0kWrnHVddUzds/b10E\""
 						},
 						{
 							"key": "Date",
-							"value": "Wed, 10 Dec 2025 16:36:54 GMT"
+							"value": "Wed, 10 Dec 2025 16:52:07 GMT"
 						},
 						{
 							"key": "Connection",
@@ -102,7 +102,7 @@
 						}
 					],
 					"cookie": [],
-					"body": "{\n    \"success\": true,\n    \"message\": \"Success\",\n    \"data\": {\n        \"_id\": \"6939a1a5462aff168c9fa301\",\n        \"firstName\": \"Ankit\",\n        \"lastName\": \"Sharma\",\n        \"fullName\": \"Ankit Sharma\",\n        \"email\": \"ankit@example.com\",\n        \"phoneNumber\": \"9882211037\",\n        \"deviceType\": \"ANDROID\",\n        \"fcmToken\": [\n            \"Sample-FCM\"\n        ],\n        \"referralCode\": \"B02A8426\",\n        \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2OTM5YTFhNTQ2MmFmZjE2OGM5ZmEzMDEiLCJlbWFpbCI6ImFua2l0QGV4YW1wbGUuY29tIiwiaWF0IjoxNzY1Mzg0NjE0LCJleHAiOjE3OTY5MjA2MTR9.awFx751SCns-eaBBot5y41tdkClKHlQzsw77gKgXs70\"\n    }\n}"
+					"body": "{\n    \"success\": true,\n    \"message\": \"Success\",\n    \"data\": {\n        \"_id\": \"6939a1a5462aff168c9fa301\",\n        \"firstName\": \"Ankit\",\n        \"lastName\": \"Sharma\",\n        \"fullName\": \"Ankit Sharma\",\n        \"email\": \"ankit@example.com\",\n        \"phoneNumber\": \"9882211037\",\n        \"deviceType\": \"ANDROID\",\n        \"fcmToken\": [\n            \"Sample-FCM\"\n        ],\n        \"referralCode\": \"B02A8426\",\n        \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2OTM5YTFhNTQ2MmFmZjE2OGM5ZmEzMDEiLCJlbWFpbCI6ImFua2l0QGV4YW1wbGUuY29tIiwiaWF0IjoxNzY1Mzg1NTI3LCJleHAiOjE3OTY5MjE1Mjd9.a8HUDmRsPqKjPFwk6psUgD0rMtxuMVnf7tE46jUqiW8\",\n        \"userInfo\": {\n            \"_id\": \"6939a2f0311d1a740656735c\",\n            \"userId\": \"6939a1a5462aff168c9fa301\",\n            \"emergencyContact\": \"9318593888\",\n            \"vehicle\": [\n                {\n                    \"wheelType\": 2,\n                    \"vehicleRegistration\": \"HP33E9771\",\n                    \"isVerified\": true,\n                    \"_id\": \"6939a2f0311d1a740656735d\"\n                }\n            ],\n            \"createdAt\": \"2025-12-10T16:42:24.778Z\",\n            \"updatedAt\": \"2025-12-10T16:45:52.139Z\",\n            \"__v\": 1\n        }\n    }\n}"
 				}
 			]
 		},
