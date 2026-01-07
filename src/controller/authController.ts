@@ -96,8 +96,6 @@ export const socialLogin = async (req: Request, res: Response) => {
       { expiresIn: "365d" }
     );
 
-    const userInfo = await userInfoModel.findOne({ userId: user._id });
-
     await userActivityModel.create({
       userId: user._id,
       type: "LOGIN",
@@ -114,8 +112,9 @@ export const socialLogin = async (req: Request, res: Response) => {
       deviceType: user.deviceType,
       fcmToken: user.fcmToken,
       referralCode: user.referralCode, // RETURN REFERRAL CODE
+      alertBalance: user.alertBalance,
+      callBalance: user.callBalance,
       token,
-      userInfo: userInfo || null,
     };
 
     return OK(res, responseUser);

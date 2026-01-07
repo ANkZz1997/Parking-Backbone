@@ -1,10 +1,10 @@
 {
 	"info": {
-		"_postman_id": "d76c24cb-54c1-41c8-a62a-c81a0dd32a35",
+		"_postman_id": "fb5dbc6f-1ae9-4fb1-ae42-b6fd400de2b1",
 		"name": "Learn Node",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
 		"_exporter_id": "33697665",
-		"_collection_link": "https://orange-shuttle-85572.postman.co/workspace/New-Team-Workspace~56e0f0cf-90da-4ea7-9330-ebb159d5c9c3/collection/33697665-d76c24cb-54c1-41c8-a62a-c81a0dd32a35?action=share&source=collection_link&creator=33697665"
+		"_collection_link": "https://orange-shuttle-85572.postman.co/workspace/New-Team-Workspace~56e0f0cf-90da-4ea7-9330-ebb159d5c9c3/collection/29039337-fb5dbc6f-1ae9-4fb1-ae42-b6fd400de2b1?action=share&source=collection_link&creator=33697665"
 	},
 	"item": [
 		{
@@ -38,7 +38,7 @@
 					},
 					"response": [
 						{
-							"name": "res",
+							"name": "Social-Login",
 							"originalRequest": {
 								"method": "POST",
 								"header": [],
@@ -85,15 +85,15 @@
 								},
 								{
 									"key": "Content-Length",
-									"value": "811"
+									"value": "531"
 								},
 								{
 									"key": "ETag",
-									"value": "W/\"32b-/lXzSp4Xc0kWrnHVddUzds/b10E\""
+									"value": "W/\"213-wyFTckLX6hKMvz2M8c9OsBXULxM\""
 								},
 								{
 									"key": "Date",
-									"value": "Wed, 10 Dec 2025 16:52:07 GMT"
+									"value": "Wed, 07 Jan 2026 16:35:15 GMT"
 								},
 								{
 									"key": "Connection",
@@ -105,7 +105,7 @@
 								}
 							],
 							"cookie": [],
-							"body": "{\n    \"success\": true,\n    \"message\": \"Success\",\n    \"data\": {\n        \"_id\": \"6939a1a5462aff168c9fa301\",\n        \"firstName\": \"Ankit\",\n        \"lastName\": \"Sharma\",\n        \"fullName\": \"Ankit Sharma\",\n        \"email\": \"ankit@example.com\",\n        \"phoneNumber\": \"9882211037\",\n        \"deviceType\": \"ANDROID\",\n        \"fcmToken\": [\n            \"Sample-FCM\"\n        ],\n        \"referralCode\": \"B02A8426\",\n        \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2OTM5YTFhNTQ2MmFmZjE2OGM5ZmEzMDEiLCJlbWFpbCI6ImFua2l0QGV4YW1wbGUuY29tIiwiaWF0IjoxNzY1Mzg1NTI3LCJleHAiOjE3OTY5MjE1Mjd9.a8HUDmRsPqKjPFwk6psUgD0rMtxuMVnf7tE46jUqiW8\",\n        \"userInfo\": {\n            \"_id\": \"6939a2f0311d1a740656735c\",\n            \"userId\": \"6939a1a5462aff168c9fa301\",\n            \"emergencyContact\": \"9318593888\",\n            \"vehicle\": [\n                {\n                    \"wheelType\": 2,\n                    \"vehicleRegistration\": \"HP33E9771\",\n                    \"isVerified\": true,\n                    \"_id\": \"6939a2f0311d1a740656735d\"\n                }\n            ],\n            \"createdAt\": \"2025-12-10T16:42:24.778Z\",\n            \"updatedAt\": \"2025-12-10T16:45:52.139Z\",\n            \"__v\": 1\n        }\n    }\n}"
+							"body": "{\n    \"success\": true,\n    \"message\": \"Success\",\n    \"data\": {\n        \"_id\": \"6939a1a5462aff168c9fa301\",\n        \"firstName\": \"Ankit\",\n        \"lastName\": \"Sharma\",\n        \"fullName\": \"Ankit Sharma\",\n        \"email\": \"ankit@example.com\",\n        \"phoneNumber\": \"9882211037\",\n        \"deviceType\": \"ANDROID\",\n        \"fcmToken\": [\n            \"Sample-FCM\"\n        ],\n        \"referralCode\": \"B02A8426\",\n        \"alertBalance\": 0,\n        \"callBalance\": 0,\n        \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2OTM5YTFhNTQ2MmFmZjE2OGM5ZmEzMDEiLCJlbWFpbCI6ImFua2l0QGV4YW1wbGUuY29tIiwiaWF0IjoxNzY3ODAzNzE0LCJleHAiOjE3OTkzMzk3MTR9.M8l_AaTs86TevJuzWDpc_1jAUyWNBk8qU61FtP-tK-k\"\n    }\n}"
 						}
 					]
 				}
@@ -174,7 +174,7 @@
 							},
 							"status": "OK",
 							"code": 200,
-							"_postman_previewlanguage": null,
+							"_postman_previewlanguage": "Text",
 							"header": [
 								{
 									"key": "X-Powered-By",
@@ -283,7 +283,7 @@
 							},
 							"status": "OK",
 							"code": 200,
-							"_postman_previewlanguage": null,
+							"_postman_previewlanguage": "Text",
 							"header": [
 								{
 									"key": "X-Powered-By",
@@ -353,7 +353,7 @@
 							},
 							"status": "OK",
 							"code": 200,
-							"_postman_previewlanguage": null,
+							"_postman_previewlanguage": "Text",
 							"header": [
 								{
 									"key": "X-Powered-By",
@@ -396,44 +396,6 @@
 							"body": "{\n    \"success\": true,\n    \"message\": \"Success\",\n    \"data\": {\n        \"_id\": \"6939a2f0311d1a740656735c\",\n        \"userId\": \"6939a1a5462aff168c9fa301\",\n        \"emergencyContact\": \"9318593888\",\n        \"vehicle\": [\n            {\n                \"wheelType\": 2,\n                \"vehicleRegistration\": \"HP33E9771\",\n                \"isVerified\": true,\n                \"_id\": \"6939a2f0311d1a740656735d\"\n            },\n            {\n                \"wheelType\": 2,\n                \"vehicleRegistration\": \"HP33E9770\",\n                \"isVerified\": true,\n                \"_id\": \"6939a350311d1a7406567366\"\n            }\n        ],\n        \"createdAt\": \"2025-12-10T16:42:24.778Z\",\n        \"updatedAt\": \"2025-12-10T16:44:00.010Z\",\n        \"__v\": 1\n    }\n}"
 						}
 					]
-				},
-				{
-					"name": "Search-vehicle",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2OTE5YWNiZDIwMTUyN2Y5YTBmZGM3ODYiLCJlbWFpbCI6ImFua2l0YTEyM0BleGFtcGxlLmNvbSIsImlhdCI6MTc2MzI5MDMwMSwiZXhwIjoxNzk0ODI2MzAxfQ.G5_Zp47vDM2NyhwjiTkJvxSyiHvLO1FcCI9S_xmjejg",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"vehicleRegistration\":\"HP33E9770\"\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{URL}}/api/user/search-vehicle",
-							"host": [
-								"{{URL}}"
-							],
-							"path": [
-								"api",
-								"user",
-								"search-vehicle"
-							]
-						}
-					},
-					"response": []
 				},
 				{
 					"name": "get-vehicles",
@@ -482,7 +444,7 @@
 							},
 							"status": "OK",
 							"code": 200,
-							"_postman_previewlanguage": null,
+							"_postman_previewlanguage": "Text",
 							"header": [
 								{
 									"key": "X-Powered-By",
@@ -531,14 +493,6 @@
 		{
 			"name": "User Profile",
 			"item": [
-				{
-					"name": "profile",
-					"request": {
-						"method": "GET",
-						"header": []
-					},
-					"response": []
-				},
 				{
 					"name": "activities",
 					"request": {
@@ -616,7 +570,7 @@
 							},
 							"status": "OK",
 							"code": 200,
-							"_postman_previewlanguage": null,
+							"_postman_previewlanguage": "Text",
 							"header": [
 								{
 									"key": "X-Powered-By",
@@ -707,7 +661,7 @@
 							},
 							"status": "OK",
 							"code": 200,
-							"_postman_previewlanguage": null,
+							"_postman_previewlanguage": "Text",
 							"header": [
 								{
 									"key": "X-Powered-By",
@@ -750,6 +704,315 @@
 							"body": "{\n    \"success\": true,\n    \"message\": \"Success\",\n    \"data\": {\n        \"userId\": \"6939a1a5462aff168c9fa301\",\n        \"notifications\": true,\n        \"emailAlerts\": true,\n        \"smsAlerts\": true,\n        \"profileVisibility\": true,\n        \"_id\": \"6947ca16463470951622d2c2\",\n        \"createdAt\": \"2025-12-21T10:21:10.504Z\",\n        \"updatedAt\": \"2025-12-21T10:21:10.504Z\",\n        \"__v\": 0\n    }\n}"
 						}
 					]
+				},
+				{
+					"name": "settings",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2OTM5YTFhNTQ2MmFmZjE2OGM5ZmEzMDEiLCJlbWFpbCI6ImFua2l0QGV4YW1wbGUuY29tIiwiaWF0IjoxNzY2MzA5MzY3LCJleHAiOjE3OTc4NDUzNjd9.sPrkalDvP0NCaivqrjqp_Da3GmYWW6Zj8yHtj6dRWns",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"notifications\": false,\n    \"emailAlerts\": true,\n    \"smsAlerts\": true,\n    \"profileVisibility\" : true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{URL}}/api/user/settings",
+							"host": [
+								"{{URL}}"
+							],
+							"path": [
+								"api",
+								"user",
+								"settings"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "settings",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"notifications\": false,\n    \"emailAlerts\": true,\n    \"smsAlerts\": true,\n    \"profileVisibility\" : true\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "{{URL}}/api/user/settings",
+									"host": [
+										"{{URL}}"
+									],
+									"path": [
+										"api",
+										"user",
+										"settings"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "",
+							"header": [
+								{
+									"key": "X-Powered-By",
+									"value": "Express"
+								},
+								{
+									"key": "Access-Control-Allow-Origin",
+									"value": "*"
+								},
+								{
+									"key": "Access-Control-Allow-Credentials",
+									"value": "true"
+								},
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								},
+								{
+									"key": "Content-Length",
+									"value": "283"
+								},
+								{
+									"key": "ETag",
+									"value": "W/\"11b-meyemQpCCynEXIB1EbH92fFjGcU\""
+								},
+								{
+									"key": "Date",
+									"value": "Wed, 07 Jan 2026 16:45:21 GMT"
+								},
+								{
+									"key": "Connection",
+									"value": "keep-alive"
+								},
+								{
+									"key": "Keep-Alive",
+									"value": "timeout=5"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"success\": true,\n    \"message\": \"Success\",\n    \"data\": {\n        \"_id\": \"6947ca16463470951622d2c2\",\n        \"userId\": \"6939a1a5462aff168c9fa301\",\n        \"notifications\": false,\n        \"emailAlerts\": true,\n        \"smsAlerts\": true,\n        \"profileVisibility\": true,\n        \"createdAt\": \"2025-12-21T10:21:10.504Z\",\n        \"updatedAt\": \"2026-01-07T16:45:21.387Z\",\n        \"__v\": 0\n    }\n}"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Search-vehicle",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2OTE5YWNiZDIwMTUyN2Y5YTBmZGM3ODYiLCJlbWFpbCI6ImFua2l0YTEyM0BleGFtcGxlLmNvbSIsImlhdCI6MTc2MzI5MDMwMSwiZXhwIjoxNzk0ODI2MzAxfQ.G5_Zp47vDM2NyhwjiTkJvxSyiHvLO1FcCI9S_xmjejg",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"vehicleRegistration\":\"HP33E9770\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{URL}}/api/user/search-vehicle",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"api",
+						"user",
+						"search-vehicle"
+					]
+				}
+			},
+			"response": [
+				{
+					"name": "Search-vehicle",
+					"originalRequest": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"vehicleRegistration\":\"HP33E9770\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{URL}}/api/user/search-vehicle",
+							"host": [
+								"{{URL}}"
+							],
+							"path": [
+								"api",
+								"user",
+								"search-vehicle"
+							]
+						}
+					},
+					"status": "Unauthorized",
+					"code": 401,
+					"_postman_previewlanguage": null,
+					"header": [
+						{
+							"key": "X-Powered-By",
+							"value": "Express"
+						},
+						{
+							"key": "Access-Control-Allow-Origin",
+							"value": "*"
+						},
+						{
+							"key": "Access-Control-Allow-Credentials",
+							"value": "true"
+						},
+						{
+							"key": "Content-Type",
+							"value": "application/json; charset=utf-8"
+						},
+						{
+							"key": "Content-Length",
+							"value": "44"
+						},
+						{
+							"key": "ETag",
+							"value": "W/\"2c-EAnCIFy1uGovyo/FU6KYwnjLgrc\""
+						},
+						{
+							"key": "Date",
+							"value": "Wed, 07 Jan 2026 16:28:43 GMT"
+						},
+						{
+							"key": "Connection",
+							"value": "keep-alive"
+						},
+						{
+							"key": "Keep-Alive",
+							"value": "timeout=5"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"success\": false,\n    \"message\": \"User not found\"\n}"
+				}
+			]
+		},
+		{
+			"name": "Home",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2OTM5YTFhNTQ2MmFmZjE2OGM5ZmEzMDEiLCJlbWFpbCI6ImFua2l0QGV4YW1wbGUuY29tIiwiaWF0IjoxNzY2MzA5MzY3LCJleHAiOjE3OTc4NDUzNjd9.sPrkalDvP0NCaivqrjqp_Da3GmYWW6Zj8yHtj6dRWns",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{URL}}/api/user/home",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"api",
+						"user",
+						"home"
+					]
+				}
+			},
+			"response": [
+				{
+					"name": "Home",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{URL}}/api/user/home",
+							"host": [
+								"{{URL}}"
+							],
+							"path": [
+								"api",
+								"user",
+								"home"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": null,
+					"header": [
+						{
+							"key": "X-Powered-By",
+							"value": "Express"
+						},
+						{
+							"key": "Access-Control-Allow-Origin",
+							"value": "*"
+						},
+						{
+							"key": "Access-Control-Allow-Credentials",
+							"value": "true"
+						},
+						{
+							"key": "Content-Type",
+							"value": "application/json; charset=utf-8"
+						},
+						{
+							"key": "Content-Length",
+							"value": "387"
+						},
+						{
+							"key": "ETag",
+							"value": "W/\"183-zV1Hj1vl3lGa39lcD7UAWHWTXEI\""
+						},
+						{
+							"key": "Date",
+							"value": "Wed, 07 Jan 2026 16:37:45 GMT"
+						},
+						{
+							"key": "Connection",
+							"value": "keep-alive"
+						},
+						{
+							"key": "Keep-Alive",
+							"value": "timeout=5"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"success\": true,\n    \"message\": \"Success\",\n    \"data\": {\n        \"_id\": \"6939a1a5462aff168c9fa301\",\n        \"firstName\": \"Ankit\",\n        \"lastName\": \"Sharma\",\n        \"fullName\": \"Ankit Sharma\",\n        \"email\": \"ankit@example.com\",\n        \"phoneNumber\": \"9882211037\",\n        \"fcmToken\": [\n            \"Sample-FCM\"\n        ],\n        \"deviceType\": \"ANDROID\",\n        \"referralCode\": \"B02A8426\",\n        \"alertBalance\": 0,\n        \"callBalance\": 0,\n        \"vehicleSearched\": 1,\n        \"timesContacted\": 0,\n        \"vehicleRegistered\": 5,\n        \"memberSince\": null\n    }\n}"
 				}
 			]
 		}

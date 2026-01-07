@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 export interface IUser extends Document {
   _id: mongoose.Types.ObjectId;
@@ -15,6 +15,8 @@ export interface IUser extends Document {
   isDeleted: boolean;
   token: string;
   password: string;
+  callBalance: number;
+  alertBalance: number;
   referralCode?: string;
 }
 
@@ -32,47 +34,55 @@ const UserSchema: Schema = new Schema<IUser>(
       type: String,
       required: true,
     },
-    image :{
+    image: {
       type: String,
-      default: null
+      default: null,
     },
     email: {
       type: String,
       required: true,
       unique: true,
       lowercase: true,
-      trim: true
+      trim: true,
     },
     phoneNumber: {
       type: String,
-      default: null
+      default: null,
     },
     fcmToken: {
       type: [String],
-      default: []
+      default: [],
     },
     deviceType: {
       type: String,
       enum: ["IOS", "ANDROID", "WEB"],
-      required: true
+      required: true,
+    },
+    callBalance: {
+      type: Number,
+      default: 0,
+    },
+    alertBalance: {
+      type: Number,
+      default: 0,
     },
     isActive: {
       type: Boolean,
-      default: false
+      default: false,
     },
     isBlocked: {
       type: Boolean,
-      default: false
+      default: false,
     },
     isDeleted: {
       type: Boolean,
-      default: false
+      default: false,
     },
-    token: {type: String},
+    token: { type: String },
     password: { type: String },
-    referralCode: { type: String  }
+    referralCode: { type: String },
   },
   { timestamps: true }
 );
 
-export const userModel = mongoose.model<IUser>('User', UserSchema);
+export const userModel = mongoose.model<IUser>("User", UserSchema);

@@ -4,9 +4,10 @@ import {
   deleteVehicle,
   getUserSettings,
   searchVehicle,
+  updateUserSettings,
   userActivity,
   userData,
-  userProfile,
+  userHome,
 } from "../controller/userController";
 
 const router = express.Router();
@@ -22,10 +23,11 @@ router.post("/search-vehicle", searchVehicle);
 
 // User Profile
 
-router.get("/profile", userProfile);
+router.get("/home", userHome);
 
 router.get("/activity", userActivity);
 
 router.get("/settings", getUserSettings);
+router.post("/settings", updateUserSettings);
 
 export default router;

@@ -159,11 +159,16 @@ export const searchVehicle = async (req: Request, res: Response) => {
 
 // Manage Vehicles *********************************************
 
-export const userProfile = async (req: Request, res: Response) => {
+export const userHome = async (req: Request, res: Response) => {
   try {
     const { userId } = req.user as any;
 
-    const userData = (await userModel.findById(userId).lean()) as any;
+    const userData = (await userModel
+      .findById(userId)
+      .select(
+        "firstName lastName fullName email phoneNumber deviceType fcmToken referralCode alertBalance callBalance"
+      )
+      .lean()) as any;
 
     if (!userData) {
       return BADREQUEST(res, "User not found");
@@ -253,6 +258,30 @@ export const getUserSettings = async (req: Request, res: Response) => {
       const newSettings = await userSettingsModel.create({ userId });
       return OK(res, newSettings);
     }
+
+    return OK(res, settings);
+  } catch (e: any) {
+    console.error(e);
+    if (e?.message) return BADREQUEST(res, e.message);
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};
+
+export const updateUserSettings = async (req: Request, res: Response) => {
+  try {
+    const {
+      notifications = true,
+      emailAlerts = true,
+      smsAlerts = true,
+      profileVisibility = true,
+    } = req.body as any;
+    const { userId } = req.user as any;
+
+    const settings = await userSettingsModel.findOneAndUpdate(
+      { userId },
+      { $set: { notifications, emailAlerts, smsAlerts, profileVisibility } },
+      { new: true, upsert: true }
+    );
 
     return OK(res, settings);
   } catch (e: any) {
