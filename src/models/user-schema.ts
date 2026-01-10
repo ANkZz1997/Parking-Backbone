@@ -17,6 +17,7 @@ export interface IUser extends Document {
   password: string;
   callBalance: number;
   alertBalance: number;
+  coinEarned?: number;
   referralCode?: string;
 }
 
@@ -66,9 +67,13 @@ const UserSchema: Schema = new Schema<IUser>(
       type: Number,
       default: 0,
     },
+    coinEarned: {
+      type: Number,
+      default: 0,
+    },
     isActive: {
       type: Boolean,
-      default: false,
+      default: true,
     },
     isBlocked: {
       type: Boolean,

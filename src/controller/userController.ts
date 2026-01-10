@@ -4,6 +4,10 @@ import { userInfoModel } from "../models/user-info-schema";
 import { userModel } from "../models/user-schema";
 import { userActivityModel } from "../models/user-activity-schema";
 import { userSettingsModel } from "../models/user-setting-schema";
+import { platform } from "os";
+import { PlatformSettingModel } from "../models/platform-settings-schema";
+import { successfulReferralModel } from "../models/successful-referral.schema";
+import { ref } from "process";
 
 // Manage Vehicles *********************************************
 
@@ -21,13 +25,56 @@ export const userData = async (req: Request, res: Response) => {
   }
 };
 
+export const getVehicleById = async (req: Request, res: Response) => {
+  try {
+    const { vehicleId } = req.query;
+    const { userId: id } = req.user as any;
+
+    const userInfo = await userInfoModel.findOne({ userId: id });
+
+    const vehicle = userInfo?.vehicle.find(
+      (v: any) => v._id?.toString() === vehicleId
+    );
+
+    if (!vehicle) {
+      return BADREQUEST(res, "Vehicle not found");
+    }
+
+    const vehicleSearched = await userActivityModel
+      .find({
+        userId: id,
+        registrationNumber: vehicle.vehicleRegistration,
+        type: "VEHICLE_SEARCHED",
+      })
+      .sort({ createdAt: -1 });
+
+    const responseData = {
+      plateNumber: vehicle.vehicleRegistration,
+      vehicleType: vehicle.wheelType,
+      contactPhone: userInfo?.emergencyContact || "",
+      searches: vehicleSearched.length,
+      contactRequests: 0,
+      lastSearched: vehicleSearched[0]?.createdAt || null,
+      createdAt: vehicle.createdAt,
+    };
+
+    return OK(res, responseData);
+  } catch (e: any) {
+    console.error(e);
+    if (e?.message) return BADREQUEST(res, e.message);
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};
+
 export const addUpdateUserInfo = async (req: Request, res: Response) => {
   try {
-    const { wheelType, vehicleRegistration, emergencyContact } = req.body;
+    const { wheelType, vehicleRegistration, emergencyContact, referralCode } =
+      req.body;
     const { userId: id } = req.user as any;
 
     const reg = vehicleRegistration.trim().toUpperCase();
 
+    // === ENSURE VEHICLE UNIQUE (DB INDEX STILL REQUIRED) ===
     const existingVehicle = await userInfoModel.findOne({
       "vehicle.vehicleRegistration": reg,
     });
@@ -36,51 +83,71 @@ export const addUpdateUserInfo = async (req: Request, res: Response) => {
       return BADREQUEST(res, "Vehicle already registered");
     }
 
-    let userInfo = await userInfoModel.findOne({ userId: id });
+    // === UPSERT USER INFO ===
+    let userInfo = await userInfoModel.findOneAndUpdate(
+      { userId: id },
+      { $setOnInsert: { userId: id, modelUseCount: 0 } },
+      { new: true, upsert: true }
+    );
 
-    if (!userInfo) {
-      userInfo = await userInfoModel.create({
-        userId: id,
-        emergencyContact,
-        vehicle: [
-          {
+    // === REFERRAL LOGIC (FIRST USE ONLY) ===
+    if (userInfo.modelUseCount === 0 && referralCode) {
+      const referringUser = await userModel.findOne({
+        referralCode: referralCode.trim().toUpperCase(),
+      });
+
+      if (referringUser) {
+        const platformSettings =
+          (await PlatformSettingModel.findOne({})) || (0 as any);
+        if (platformSettings) {
+          const referralCount = await successfulReferralModel.countDocuments({
+            referredBy: referringUser._id,
+          });
+
+          if (referralCount < platformSettings?.maxReferralAllowed) {
+            await successfulReferralModel.create({
+              referredBy: referringUser._id,
+              referredTo: id,
+              rewardEarned: platformSettings.rewardPerReferral,
+            });
+
+            await userModel.updateOne(
+              { _id: referringUser._id },
+              {
+                $inc: {
+                  coinEarned: platformSettings.rewardPerReferral,
+                },
+              }
+            );
+          }
+        }
+      }
+    }
+
+    // === ATOMIC USER INFO UPDATE ===
+    await userInfoModel.updateOne(
+      { userId: id },
+      {
+        $set: {
+          emergencyContact: emergencyContact || userInfo.emergencyContact,
+        },
+        $push: {
+          vehicle: {
             wheelType,
             vehicleRegistration: reg,
             isVerified: true,
           },
-        ],
-      });
+        },
+        $inc: { modelUseCount: 1 },
+      }
+    );
 
-      await userActivityModel.create({
-        userId: id,
-        type: "VEHICLE_ADDED",
-        title: "You have added a new vehicle",
-      });
-
-      return OK(res, userInfo);
-    }
-
-    const already = userInfo.vehicle.some((v) => v.vehicleRegistration === reg);
-
-    if (already) {
-      return BADREQUEST(res, "You have already added this vehicle");
-    }
-
-    userInfo.vehicle.push({
-      wheelType,
-      vehicleRegistration: reg,
-      isVerified: true,
-    });
-
-    await userActivityModel.create({
+    // Fire-and-forget
+    userActivityModel.create({
       userId: id,
       type: "VEHICLE_ADDED",
-      title: "You have updated your vehicle details.",
+      title: "You have added a new vehicle",
     });
-
-    if (emergencyContact) userInfo.emergencyContact = emergencyContact;
-
-    await userInfo.save();
 
     return OK(res, userInfo);
   } catch (e: any) {
@@ -131,6 +198,7 @@ export const searchVehicle = async (req: Request, res: Response) => {
       userId: userId,
       type: "VEHICLE_SEARCHED",
       title: `You have searched ${vehicleRegistration}`,
+      registrationNumber: vehicleRegistration,
     });
 
     const checkData = await userInfoModel

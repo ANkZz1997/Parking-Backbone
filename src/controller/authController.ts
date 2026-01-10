@@ -12,6 +12,9 @@ dotenv.config();
 import crypto from "crypto";
 import { userInfoModel } from "../models/user-info-schema";
 import { userActivityModel } from "../models/user-activity-schema";
+import { userSettingsModel } from "../models/user-setting-schema";
+import { platform } from "os";
+import { PlatformSettingModel } from "../models/platform-settings-schema";
 
 export const socialLogin = async (req: Request, res: Response) => {
   try {
@@ -81,6 +84,19 @@ export const socialLogin = async (req: Request, res: Response) => {
         vehicle: [],
         emergencyContact: null,
       });
+
+      await userSettingsModel.findOneAndUpdate(
+        { userId: user._id },
+        { $setOnInsert: { userId: user._id } },
+        { new: true, upsert: true }
+      );
+
+      await userInfoModel.create({
+        userId: user._id,
+        emergencyContact: null,
+        modelUseCount: 0,
+        vehicle: [],
+      });
     }
 
     // === UPDATE FCM TOKEN ===
@@ -96,7 +112,7 @@ export const socialLogin = async (req: Request, res: Response) => {
       { expiresIn: "365d" }
     );
 
-    await userActivityModel.create({
+    userActivityModel.create({
       userId: user._id,
       type: "LOGIN",
       title: "You have successfully logged in",

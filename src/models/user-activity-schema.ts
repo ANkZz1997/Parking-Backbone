@@ -12,6 +12,8 @@ export interface IUserActivity extends Document {
     | "VEHICLE_REMOVED"
     | "DELETE_ACCOUNT";
   title: string | null;
+  registrationNumber: string | null;
+  createdAt: Date;
 }
 
 const UserActivitySchema = new Schema<IUserActivity>(
@@ -20,6 +22,10 @@ const UserActivitySchema = new Schema<IUserActivity>(
       type: Schema.Types.ObjectId,
       ref: "User",
       required: true,
+    },
+    registrationNumber:{
+      type: String,
+      default: null,
     },
     type: {
       type: String,

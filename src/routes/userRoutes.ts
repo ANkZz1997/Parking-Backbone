@@ -3,6 +3,7 @@ import {
   addUpdateUserInfo,
   deleteVehicle,
   getUserSettings,
+  getVehicleById,
   searchVehicle,
   updateUserSettings,
   userActivity,
@@ -14,6 +15,8 @@ const router = express.Router();
 
 // Manager Vehicles
 router.get("/userInfo", userData);
+
+router.get("/vehicleById", getVehicleById);
 
 router.post("/userInfo", addUpdateUserInfo);
 
@@ -28,6 +31,7 @@ router.get("/home", userHome);
 router.get("/activity", userActivity);
 
 router.get("/settings", getUserSettings);
+
 router.post("/settings", updateUserSettings);
 
 export default router;
