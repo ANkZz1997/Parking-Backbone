@@ -8,6 +8,9 @@ import { platform } from "os";
 import { PlatformSettingModel } from "../models/platform-settings-schema";
 import { successfulReferralModel } from "../models/successful-referral.schema";
 import { ref } from "process";
+import { NotificationService } from "../utils/fcm";
+import { NotificationModel } from "../models/notification-schema";
+import { makeNonce } from "../middleware/zego-middle";
 
 // Manage Vehicles *********************************************
 
@@ -201,7 +204,7 @@ export const searchVehicle = async (req: Request, res: Response) => {
       registrationNumber: vehicleRegistration,
     });
 
-    const checkData = await userInfoModel
+    const checkData = (await userInfoModel
       .findOne({
         userId: { $ne: userId },
         vehicle: {
@@ -209,15 +212,93 @@ export const searchVehicle = async (req: Request, res: Response) => {
         },
       })
       .populate("userId")
-      .lean();
+      .lean()) as any;
 
     if (!checkData) {
       return BADREQUEST(res, "Vehicle not found");
     }
 
-    const { fullName, image } = checkData.userId as any;
+    const { fullName, image, _id } = checkData.userId as any;
 
-    return OK(res, { fullName, image });
+    //Initiate Notificaiton
+
+    await NotificationModel.create({
+      userId: checkData?.userId?._id,
+      type: "VEHICLE_SEARCHED",
+      title: "Your vehicle was searched",
+      body: `Your vehicle with registration number ${vehicleRegistration} was just searched by a user.`,
+      registrationNumber: vehicleRegistration,
+    });
+
+    if (checkData?.userId?.fcmToken.length) {
+      NotificationService(
+        checkData?.userId?.fcmToken,
+        "VEHICLE_SEARCHED",
+        null,
+        "Your vehicle was searched",
+        `Your vehicle with registration number ${vehicleRegistration} was just searched by a user.`
+      );
+    }
+
+    return OK(res, { fullName, image, userId: _id });
+  } catch (e: any) {
+    console.error(e);
+    if (e?.message) return BADREQUEST(res, e.message);
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};
+
+export const initiateAlert = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.user as any;
+    const { priorityHigh, receiverId } = req.body;
+
+    const receiverData = (await userModel
+      .findById(receiverId)
+      .select("fcmToken")
+      .lean()) as any;
+
+    if (!receiverData) {
+      return BADREQUEST(res, "Receiver not found");
+    }
+
+    const notifications = await NotificationModel.create({
+      userId: receiverData?._id,
+      type: priorityHigh ? "ALERT_HIGH" : "ALERT_LOW",
+      title: priorityHigh ? "High Priority Alert" : "Low Priority Alert",
+      body: priorityHigh
+        ? "You have received a high priority alert."
+        : "You have received a low priority alert.",
+      senderId: userId,
+    });
+
+    if (receiverData?.fcmToken?.length) {
+      NotificationService(
+        receiverData?.fcmToken,
+        priorityHigh ? "ALERT_HIGH" : "ALERT_LOW",
+        null,
+        priorityHigh ? "High Priority Alert" : "Low Priority Alert",
+        priorityHigh
+          ? "You have received a high priority alert."
+          : "You have received a low priority alert."
+      );
+    }
+
+    return OK(res, {});
+  } catch (e: any) {
+    console.error(e);
+    if (e?.message) return BADREQUEST(res, e.message);
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};
+
+export const initiateCall = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.user as any;
+
+    const data = makeNonce(userId);
+
+    return OK(res, data);
   } catch (e: any) {
     console.error(e);
     if (e?.message) return BADREQUEST(res, e.message);
@@ -352,6 +433,111 @@ export const updateUserSettings = async (req: Request, res: Response) => {
     );
 
     return OK(res, settings);
+  } catch (e: any) {
+    console.error(e);
+    if (e?.message) return BADREQUEST(res, e.message);
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};
+
+export const logout = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.user as any;
+    const { fcmToken } = req.body as any;
+
+    if (!fcmToken) {
+      return BADREQUEST(res, "FCM Token is required");
+    }
+
+    await userModel.updateOne(
+      { _id: userId },
+      { $pull: { fcmToken: fcmToken } }
+    );
+
+    return OK(res, {});
+  } catch (e: any) {
+    console.error(e);
+    if (e?.message) return BADREQUEST(res, e.message);
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};
+
+// Notification Management ************************************
+
+export const getUserNotifications = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.user as any;
+    let { page = 1, limit = 20 } = req.query;
+
+    const pageNum = Number(page);
+    const limitNum = Number(limit);
+
+    const notifications = await NotificationModel.find({ userId })
+      .sort({ createdAt: -1 })
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum)
+      .lean();
+
+    const totalData = await NotificationModel.countDocuments({ userId });
+
+    return OK(res, {
+      notifications,
+      totalData,
+      page: pageNum,
+      limit: limitNum,
+      hasNext: totalData > pageNum * limitNum,
+      hasPrevious: pageNum > 1,
+    });
+  } catch (e: any) {
+    console.error(e);
+    if (e?.message) return BADREQUEST(res, e.message);
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};
+
+export const readNotifications = async (req: Request, res: Response) => {
+  try {
+    const { notificationId } = req.body as any;
+    let notifications;
+    if (notificationId) {
+      notifications = await NotificationModel.findOneAndUpdate(
+        { _id: notificationId },
+        { $set: { isRead: true } },
+        { new: true }
+      );
+
+      if (
+        notifications?.type === "ALERT_HIGH" ||
+        notifications?.type === "ALERT_LOW"
+      ) {
+        await NotificationModel.create({
+          userId: notifications?.senderId,
+          type: "ALERT_ACKNOWLEDGED",
+          title: "Your alert has been acknowledged",
+          body: `Your alert regarding vehicle ${notifications?.registrationNumber} has been acknowledged by the owner.`,
+          registrationNumber: notifications?.registrationNumber,
+        });
+
+        const findFCM = (await userModel
+          .findById(notifications?.senderId)
+          .select("fcmToken")
+          .lean()) as any;
+
+        if (findFCM.length) {
+          NotificationService(
+            findFCM?.fcmToken,
+            "ALERT_ACKNOWLEDGED",
+            null,
+            "Your alert has been acknowledged",
+            `Your alert regarding vehicle ${notifications?.registrationNumber} has been acknowledged by the owner.`
+          );
+        }
+      }
+    } else {
+      throw new Error("Notification ID is required");
+    }
+
+    return OK(res, notifications);
   } catch (e: any) {
     console.error(e);
     if (e?.message) return BADREQUEST(res, e.message);
