@@ -7,7 +7,10 @@ export interface IUserActivity extends Document {
     | "LOGOUT"
     | "VEHICLE_SEARCHED"
     | "ALERT"
+    | "MISSED_CALL"
+    | "RECEIVED_CALL"
     | "CALL"
+    | "FAILED_CALL"
     | "VEHICLE_ADDED"
     | "VEHICLE_REMOVED"
     | "DELETE_ACCOUNT";
@@ -35,6 +38,9 @@ const UserActivitySchema = new Schema<IUserActivity>(
         "VEHICLE_SEARCHED",
         "ALERT",
         "CALL",
+        "MISSED_CALL",
+        "RECEIVED_CALL",
+        "FAILED_CALL",
         "VEHICLE_ADDED",
         "VEHICLE_REMOVED",
         "DELETE_ACCOUNT",

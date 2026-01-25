@@ -11,6 +11,8 @@ import { ref } from "process";
 import { NotificationService } from "../utils/fcm";
 import { NotificationModel } from "../models/notification-schema";
 import { makeNonce } from "../middleware/zego-middle";
+import { callModel } from "../models/call-schema";
+import { v4 as uuidv4 } from "uuid";
 
 // Manage Vehicles *********************************************
 
@@ -36,7 +38,7 @@ export const getVehicleById = async (req: Request, res: Response) => {
     const userInfo = await userInfoModel.findOne({ userId: id });
 
     const vehicle = userInfo?.vehicle.find(
-      (v: any) => v._id?.toString() === vehicleId
+      (v: any) => v._id?.toString() === vehicleId,
     );
 
     if (!vehicle) {
@@ -90,7 +92,7 @@ export const addUpdateUserInfo = async (req: Request, res: Response) => {
     let userInfo = await userInfoModel.findOneAndUpdate(
       { userId: id },
       { $setOnInsert: { userId: id, modelUseCount: 0 } },
-      { new: true, upsert: true }
+      { new: true, upsert: true },
     );
 
     // === REFERRAL LOGIC (FIRST USE ONLY) ===
@@ -120,7 +122,7 @@ export const addUpdateUserInfo = async (req: Request, res: Response) => {
                 $inc: {
                   coinEarned: platformSettings.rewardPerReferral,
                 },
-              }
+              },
             );
           }
         }
@@ -142,7 +144,7 @@ export const addUpdateUserInfo = async (req: Request, res: Response) => {
           },
         },
         $inc: { modelUseCount: 1 },
-      }
+      },
     );
 
     // Fire-and-forget
@@ -171,7 +173,7 @@ export const deleteVehicle = async (req: Request, res: Response) => {
         $pull: {
           vehicle: { _id: vehicleId },
         },
-      }
+      },
     );
 
     if (updateResult.modifiedCount === 0) {
@@ -236,7 +238,7 @@ export const searchVehicle = async (req: Request, res: Response) => {
         "VEHICLE_SEARCHED",
         null,
         "Your vehicle was searched",
-        `Your vehicle with registration number ${vehicleRegistration} was just searched by a user.`
+        `Your vehicle with registration number ${vehicleRegistration} was just searched by a user.`,
       );
     }
 
@@ -280,7 +282,7 @@ export const initiateAlert = async (req: Request, res: Response) => {
         priorityHigh ? "High Priority Alert" : "Low Priority Alert",
         priorityHigh
           ? "You have received a high priority alert."
-          : "You have received a low priority alert."
+          : "You have received a low priority alert.",
       );
     }
 
@@ -295,10 +297,111 @@ export const initiateAlert = async (req: Request, res: Response) => {
 export const initiateCall = async (req: Request, res: Response) => {
   try {
     const { userId } = req.user as any;
+    const { receiverId } = req.query;
+
+    const callId = uuidv4();
+
+    await callModel.create({
+      callId,
+      callerId: userId,
+      receiverId,
+      status: "INITIATED",
+    });
 
     const data = makeNonce(userId);
 
-    return OK(res, data);
+    return OK(res, {
+      ...data,
+      callId,
+    });
+  } catch (e: any) {
+    console.error(e);
+    if (e?.message) return BADREQUEST(res, e.message);
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};
+
+export const updateCallStatus = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.user as any;
+    const { callId, status = "ANSWERED" } = req.query;
+    const callData = await callModel.findOne({ callId });
+
+    if (!callData) {
+      return BADREQUEST(res, "Call not found");
+    }
+
+    if (status === "ANSWERED") {
+      await callModel.updateOne(
+        { callId },
+        {
+          status: "ANSWERED",
+          answeredAt: new Date(),
+          startedAt: new Date(),
+        },
+      );
+
+      userActivityModel.create({
+        userId: userId,
+        type: "CALL",
+        title: "Calling activity recorded",
+      });
+
+      userActivityModel.create({
+        userId: callData.receiverId,
+        type: "RECEIVED_CALL",
+        title: "Calling activity recorded",
+      });
+    } else if (status === "ENDED") {
+      const call = (await callModel.findOne({ callId })) as any;
+
+      const endedAt = new Date();
+      const duration = call.startedAt
+        ? Math.floor((endedAt.getTime() - call.startedAt.getTime()) / 1000)
+        : 0;
+
+      await callModel.updateOne(
+        { callId },
+        {
+          status: "ENDED",
+          endedAt,
+          durationInSeconds: duration,
+        },
+      );
+    } else {
+      await callModel.updateOne(
+        { callId },
+        {
+          status: "FAILED",
+          failureReason: "User did not answer",
+          endedAt: new Date(),
+        },
+      );
+
+      userActivityModel.create({
+        userId: userId,
+        type: "FAILED_CALL",
+        title: "Calling activity recorded",
+      });
+
+      const userData = await userModel
+        .findById(callData.receiverId)
+        .select("fcmToken");
+
+      if (!userData) {
+        return BADREQUEST(res, "Receiver not found");
+      }
+
+      NotificationService(
+        userData?.fcmToken,
+        "CALL",
+        null,
+        "Missed Call Alert",
+        "You have missed a call.",
+      );
+    }
+
+    return OK(res, {});
   } catch (e: any) {
     console.error(e);
     if (e?.message) return BADREQUEST(res, e.message);
@@ -315,7 +418,7 @@ export const userHome = async (req: Request, res: Response) => {
     const userData = (await userModel
       .findById(userId)
       .select(
-        "firstName lastName fullName email phoneNumber deviceType fcmToken referralCode alertBalance callBalance"
+        "firstName lastName fullName email phoneNumber deviceType fcmToken referralCode alertBalance callBalance createdAt",
       )
       .lean()) as any;
 
@@ -327,7 +430,10 @@ export const userHome = async (req: Request, res: Response) => {
       userId,
       type: "VEHICLE_SEARCHED",
     });
-    const timesContacted = 0;
+    const timesContacted = await userActivityModel.countDocuments({
+      userId,
+      type: "RECEIVED_CALL",
+    });
     const vehicleRegistered = await userInfoModel.findOne({ userId });
     const memberSince = userData?.createdAt || null;
 
@@ -429,7 +535,7 @@ export const updateUserSettings = async (req: Request, res: Response) => {
     const settings = await userSettingsModel.findOneAndUpdate(
       { userId },
       { $set: { notifications, emailAlerts, smsAlerts, profileVisibility } },
-      { new: true, upsert: true }
+      { new: true, upsert: true },
     );
 
     return OK(res, settings);
@@ -451,7 +557,7 @@ export const logout = async (req: Request, res: Response) => {
 
     await userModel.updateOne(
       { _id: userId },
-      { $pull: { fcmToken: fcmToken } }
+      { $pull: { fcmToken: fcmToken } },
     );
 
     return OK(res, {});
@@ -503,7 +609,7 @@ export const readNotifications = async (req: Request, res: Response) => {
       notifications = await NotificationModel.findOneAndUpdate(
         { _id: notificationId },
         { $set: { isRead: true } },
-        { new: true }
+        { new: true },
       );
 
       if (
@@ -529,7 +635,7 @@ export const readNotifications = async (req: Request, res: Response) => {
             "ALERT_ACKNOWLEDGED",
             null,
             "Your alert has been acknowledged",
-            `Your alert regarding vehicle ${notifications?.registrationNumber} has been acknowledged by the owner.`
+            `Your alert regarding vehicle ${notifications?.registrationNumber} has been acknowledged by the owner.`,
           );
         }
       }

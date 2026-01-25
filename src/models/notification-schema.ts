@@ -3,7 +3,7 @@ import mongoose, { Document, Schema } from "mongoose";
 export interface INotifications extends Document {
   userId: mongoose.Types.ObjectId;
   senderId: mongoose.Types.ObjectId | null;
-  type: "VEHICLE_SEARCHED" | "ALERT_HIGH" | "ALERT_LOW" | "CALL" | "ALERT_ACKNOWLEDGED";
+  type: "VEHICLE_SEARCHED" | "ALERT_HIGH" | "ALERT_LOW" | "CALL" | "ALERT_ACKNOWLEDGED" | "FAILED_CALL" | "RECEIVED_CALL";
   title: string | null;
   body: string | null;
   isRead: boolean;
@@ -25,7 +25,7 @@ const NotificationSchema = new Schema<INotifications>(
     },
     type: { 
       type: String,
-      enum: ["VEHICLE_SEARCHED", "ALERT_HIGH","ALERT_LOW", "CALL", "ALERT_ACKNOWLEDGED"],
+      enum: ["VEHICLE_SEARCHED", "ALERT_HIGH","ALERT_LOW", "CALL", "ALERT_ACKNOWLEDGED", "FAILED_CALL", "RECEIVED_CALL"],
       required: true,
     },
     title: {

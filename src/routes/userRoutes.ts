@@ -10,6 +10,7 @@ import {
   logout,
   readNotifications,
   searchVehicle,
+  updateCallStatus,
   updateUserSettings,
   userActivity,
   userData,
@@ -30,11 +31,9 @@ router.delete("/delete-vehicle", deleteVehicle);
 
 router.post("/search-vehicle", searchVehicle);
 
-router.get("/initiate-call", initiateCall);
+router.route("/initiate-call").get(initiateCall).patch(updateCallStatus);
 
 router.post("/initiate-alert", initiateAlert);
-
-
 
 // User Profile
 
@@ -42,18 +41,15 @@ router.get("/home", userHome);
 
 router.get("/activity", userActivity);
 
-router.get("/settings", getUserSettings);
-
-router.post("/settings", updateUserSettings);
+router.route("/settings").get(getUserSettings).post(updateUserSettings);
 
 router.post("/logout", logout);
 
-
 // Notification
 
-router.get("/notifications", getUserNotifications)
-
-router.post("/notifications", readNotifications)
-
+router
+  .route("/notifications")
+  .get(getUserNotifications)
+  .post(readNotifications);
 
 export default router;
