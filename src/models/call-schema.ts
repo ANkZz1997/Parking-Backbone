@@ -5,7 +5,7 @@ const CallSchema = new Schema(
     callId: { type: String, required: true, unique: true },
 
     callerId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-    receiverId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    receiverId: { type: Schema.Types.ObjectId, ref: "User"},
 
     status: {
       type: String,

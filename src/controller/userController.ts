@@ -297,22 +297,9 @@ export const initiateAlert = async (req: Request, res: Response) => {
 export const initiateCall = async (req: Request, res: Response) => {
   try {
     const { userId } = req.user as any;
-    const { receiverId } = req.query;
-
-    const callId = uuidv4();
-
-    await callModel.create({
-      callId,
-      callerId: userId,
-      receiverId,
-      status: "INITIATED",
-    });
-
     const data = makeNonce(userId);
-
     return OK(res, {
       ...data,
-      callId,
     });
   } catch (e: any) {
     console.error(e);
@@ -324,7 +311,19 @@ export const initiateCall = async (req: Request, res: Response) => {
 export const updateCallStatus = async (req: Request, res: Response) => {
   try {
     const { userId } = req.user as any;
-    const { callId, status = "ANSWERED" } = req.query;
+    const { receiverId, callId, status = "INITIATED" } = req.query;
+
+    if (status == "INITIATED" && receiverId) {
+      const newCall = await callModel.create({
+        callId: uuidv4(),
+        callerId: userId,
+        receiverId: receiverId,
+        status: "INITIATED",
+      });
+
+      return OK(res, { callId: newCall.callId });
+    }
+
     const callData = await callModel.findOne({ callId });
 
     if (!callData) {
@@ -368,7 +367,7 @@ export const updateCallStatus = async (req: Request, res: Response) => {
           durationInSeconds: duration,
         },
       );
-    } else {
+    } else if (status === "FAILED") {
       await callModel.updateOne(
         { callId },
         {
@@ -399,6 +398,8 @@ export const updateCallStatus = async (req: Request, res: Response) => {
         "Missed Call Alert",
         "You have missed a call.",
       );
+    } else {
+      throw new Error("Invalid call status");
     }
 
     return OK(res, {});
