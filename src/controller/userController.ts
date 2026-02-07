@@ -13,6 +13,7 @@ import { NotificationModel } from "../models/notification-schema";
 import { makeNonce } from "../middleware/zego-middle";
 import { callModel } from "../models/call-schema";
 import { v4 as uuidv4 } from "uuid";
+import { getTranslation } from "../utils/translations";
 
 // Manage Vehicles *********************************************
 
@@ -222,23 +223,43 @@ export const searchVehicle = async (req: Request, res: Response) => {
 
     const { fullName, image, _id } = checkData.userId as any;
 
-    //Initiate Notificaiton
+    // Get receiver's language preference
+    const receiverSettings = await userSettingsModel.findOne({
+      userId: checkData?.userId?._id,
+    });
+    const language = receiverSettings?.preferredLanguage || "en";
+
+    // Get translation ONLY for FCM push notification
+    const translation = getTranslation(
+      "VEHICLE_SEARCHED",
+      language,
+      vehicleRegistration,
+    );
+
+    // ✅ ALWAYS store in English in database
+    const englishTranslation = getTranslation(
+      "VEHICLE_SEARCHED",
+      "en",
+      vehicleRegistration,
+    );
 
     await NotificationModel.create({
       userId: checkData?.userId?._id,
       type: "VEHICLE_SEARCHED",
-      title: "Your vehicle was searched",
-      body: `Your vehicle with registration number ${vehicleRegistration} was just searched by a user.`,
+      title: englishTranslation.title, // ← Always English
+      body: englishTranslation.body, // ← Always English
       registrationNumber: vehicleRegistration,
     });
 
+    // Send FCM in user's preferred language
     if (checkData?.userId?.fcmToken.length) {
       NotificationService(
         checkData?.userId?.fcmToken,
         "VEHICLE_SEARCHED",
         null,
-        "Your vehicle was searched",
-        `Your vehicle with registration number ${vehicleRegistration} was just searched by a user.`,
+        translation.title, // ← User's language for push notification
+        translation.body, // ← User's language for push notification
+        language,
       );
     }
 
@@ -264,25 +285,36 @@ export const initiateAlert = async (req: Request, res: Response) => {
       return BADREQUEST(res, "Receiver not found");
     }
 
-    const notifications = await NotificationModel.create({
+    // Get receiver's language preference
+    const receiverSettings = await userSettingsModel.findOne({
+      userId: receiverId,
+    });
+    const language = receiverSettings?.preferredLanguage || "en";
+
+    // Get translation for FCM
+    const notificationType = priorityHigh ? "ALERT_HIGH" : "ALERT_LOW";
+    const translation = getTranslation(notificationType, language);
+
+    // ✅ ALWAYS store in English in database
+    const englishTranslation = getTranslation(notificationType, "en");
+
+    await NotificationModel.create({
       userId: receiverData?._id,
-      type: priorityHigh ? "ALERT_HIGH" : "ALERT_LOW",
-      title: priorityHigh ? "High Priority Alert" : "Low Priority Alert",
-      body: priorityHigh
-        ? "You have received a high priority alert."
-        : "You have received a low priority alert.",
+      type: notificationType,
+      title: englishTranslation.title, // ← Always English
+      body: englishTranslation.body, // ← Always English
       senderId: userId,
     });
 
+    // Send FCM in user's preferred language
     if (receiverData?.fcmToken?.length) {
       NotificationService(
         receiverData?.fcmToken,
-        priorityHigh ? "ALERT_HIGH" : "ALERT_LOW",
+        notificationType,
         null,
-        priorityHigh ? "High Priority Alert" : "Low Priority Alert",
-        priorityHigh
-          ? "You have received a high priority alert."
-          : "You have received a low priority alert.",
+        translation.title, // ← User's language for push
+        translation.body, // ← User's language for push
+        language,
       );
     }
 
@@ -391,12 +423,23 @@ export const updateCallStatus = async (req: Request, res: Response) => {
         return BADREQUEST(res, "Receiver not found");
       }
 
+      // Get receiver's language preference
+      const receiverSettings = await userSettingsModel.findOne({
+        userId: callData?.receiverId,
+      });
+      const language = receiverSettings?.preferredLanguage || "en";
+
+      // Get translation for FCM
+      const translation = getTranslation("CALL", language);
+
+      // Send FCM in user's preferred language
       NotificationService(
         userData?.fcmToken,
         "CALL",
         null,
-        "Missed Call Alert",
-        "You have missed a call.",
+        translation.title,
+        translation.body,
+        language,
       );
     } else {
       throw new Error("Invalid call status");
@@ -530,12 +573,26 @@ export const updateUserSettings = async (req: Request, res: Response) => {
       emailAlerts = true,
       smsAlerts = true,
       profileVisibility = true,
+      preferredLanguage = "en", // NEW FIELD
     } = req.body as any;
     const { userId } = req.user as any;
 
+    // Validate language
+    if (!["en", "hi", "mr"].includes(preferredLanguage)) {
+      return BADREQUEST(res, "Invalid language. Supported: en, hi, mr");
+    }
+
     const settings = await userSettingsModel.findOneAndUpdate(
       { userId },
-      { $set: { notifications, emailAlerts, smsAlerts, profileVisibility } },
+      {
+        $set: {
+          notifications,
+          emailAlerts,
+          smsAlerts,
+          profileVisibility,
+          preferredLanguage,
+        },
+      },
       { new: true, upsert: true },
     );
 
@@ -579,6 +636,10 @@ export const getUserNotifications = async (req: Request, res: Response) => {
     const pageNum = Number(page);
     const limitNum = Number(limit);
 
+    // Fetch user's language preference
+    const userSettings = await userSettingsModel.findOne({ userId });
+    const userLanguage = userSettings?.preferredLanguage || "en";
+
     const notifications = await NotificationModel.find({ userId })
       .sort({ createdAt: -1 })
       .skip((pageNum - 1) * limitNum)
@@ -587,8 +648,23 @@ export const getUserNotifications = async (req: Request, res: Response) => {
 
     const totalData = await NotificationModel.countDocuments({ userId });
 
+    // Translate each notification to user's current language (only for response)
+    const translatedNotifications = notifications.map((notification) => {
+      const translation = getTranslation(
+        notification.type,
+        userLanguage,
+        notification.registrationNumber || "",
+      );
+
+      return {
+        ...notification,
+        title: translation.title, // Translated for response only
+        body: translation.body, // Translated for response only
+      };
+    });
+
     return OK(res, {
-      notifications,
+      notifications: translatedNotifications,
       totalData,
       page: pageNum,
       limit: limitNum,
@@ -605,6 +681,8 @@ export const getUserNotifications = async (req: Request, res: Response) => {
 export const readNotifications = async (req: Request, res: Response) => {
   try {
     const { notificationId } = req.body as any;
+    const { userId } = req.user as any;
+
     let notifications;
     if (notificationId) {
       notifications = await NotificationModel.findOneAndUpdate(
@@ -617,11 +695,31 @@ export const readNotifications = async (req: Request, res: Response) => {
         notifications?.type === "ALERT_HIGH" ||
         notifications?.type === "ALERT_LOW"
       ) {
+        // Get sender's language preference
+        const senderSettings = await userSettingsModel.findOne({
+          userId: notifications?.senderId,
+        });
+        const language = senderSettings?.preferredLanguage || "en";
+
+        // Get translation for FCM
+        const translation = getTranslation(
+          "ALERT_ACKNOWLEDGED",
+          language,
+          notifications?.registrationNumber,
+        );
+
+        // ✅ ALWAYS store in English in database
+        const englishTranslation = getTranslation(
+          "ALERT_ACKNOWLEDGED",
+          "en",
+          notifications?.registrationNumber,
+        );
+
         await NotificationModel.create({
           userId: notifications?.senderId,
           type: "ALERT_ACKNOWLEDGED",
-          title: "Your alert has been acknowledged",
-          body: `Your alert regarding vehicle ${notifications?.registrationNumber} has been acknowledged by the owner.`,
+          title: englishTranslation.title, // ← Always English
+          body: englishTranslation.body, // ← Always English
           registrationNumber: notifications?.registrationNumber,
         });
 
@@ -630,13 +728,15 @@ export const readNotifications = async (req: Request, res: Response) => {
           .select("fcmToken")
           .lean()) as any;
 
-        if (findFCM.length) {
+        // Send FCM in user's preferred language
+        if (findFCM?.fcmToken?.length) {
           NotificationService(
             findFCM?.fcmToken,
             "ALERT_ACKNOWLEDGED",
             null,
-            "Your alert has been acknowledged",
-            `Your alert regarding vehicle ${notifications?.registrationNumber} has been acknowledged by the owner.`,
+            translation.title, // ← User's language for push
+            translation.body, // ← User's language for push
+            language,
           );
         }
       }

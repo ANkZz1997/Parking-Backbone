@@ -1,7 +1,7 @@
+// utils/fcm.ts
 import admin from "firebase-admin";
 import { configDotenv } from "dotenv";
-import mongoose, { Types } from "mongoose";
-import { title } from "process";
+import { SupportedLanguage } from "./translations";
 
 configDotenv();
 
@@ -18,8 +18,8 @@ export const initializeFirebase = () => {
 
     // Fix multiline private key issue
     serviceAccount.private_key = serviceAccount.private_key.replace(
-      /\\n/g,
-      "\n"
+      /\\\\\\\\\\\\\\\\n/g,
+      "\\\\\\\\n",
     );
 
     if (!admin.apps.length) {
@@ -34,12 +34,16 @@ export const initializeFirebase = () => {
   }
 };
 
+/**
+ * Send FCM notifications with language support
+ */
 export const NotificationService = async (
   fcms: string[],
   type: string,
   referenceId?: any,
-  title?: string, 
-  body?: string
+  title?: string,
+  body?: string,
+  language: SupportedLanguage = "en", // NEW PARAMETER
 ) => {
   if (!fcms?.length) return;
 
@@ -54,12 +58,15 @@ export const NotificationService = async (
     data: {
       type,
       referenceId: referenceId ? JSON.stringify(referenceId) : "",
+      language, // Include language in data payload
     },
   }));
 
-  console.log(`🚀 Sending push notifications in ${Math.ceil(
-    payloads.length / PUSH_BATCH_SIZE
-  )} batch(es)`);
+  console.log(
+    `🚀 Sending push notifications in ${Math.ceil(
+      payloads.length / PUSH_BATCH_SIZE,
+    )} batch(es) [Language: ${language}]`,
+  );
 
   for (let i = 0; i < payloads.length; i += PUSH_BATCH_SIZE) {
     const batch = payloads.slice(i, i + PUSH_BATCH_SIZE);

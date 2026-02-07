@@ -54,11 +54,6 @@ const UserInfoSchema = new Schema<IUserInfo>(
   { timestamps: true }
 );
 
-UserInfoSchema.index(
-  { "vehicle.vehicleRegistration": 1 },
-  { unique: true, sparse: true }
-);
-
 export const userInfoModel = mongoose.model<IUserInfo>(
   "UserInfo",
   UserInfoSchema

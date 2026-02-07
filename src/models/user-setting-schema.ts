@@ -6,6 +6,7 @@ export interface IUserSettings extends Document {
   emailAlerts: boolean;
   smsAlerts: boolean;
   profileVisibility: boolean;
+  preferredLanguage: "en" | "hi" | "mr";
 }
 
 const UserSettingsSchema = new Schema<IUserSettings>(
@@ -31,11 +32,16 @@ const UserSettingsSchema = new Schema<IUserSettings>(
       type: Boolean,
       default: true,
     },
+    preferredLanguage: {
+      type: String,
+      enum: ["en", "hi", "mr"],
+      default: "en",
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 export const userSettingsModel = mongoose.model<IUserSettings>(
   "UserSettings",
-  UserSettingsSchema
+  UserSettingsSchema,
 );
