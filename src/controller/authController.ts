@@ -35,7 +35,7 @@ export const socialLogin = async (req: Request, res: Response) => {
     if (deviceType === "ANDROID") {
       if (!firstName || !lastName || !email || !fcmToken) {
         throw new Error(
-          "For Android: Firstname, Lastname, Email, and FCM-Token are required"
+          "For Android: Firstname, Lastname, Email, and FCM-Token are required",
         );
       }
       fullName = `${firstName} ${lastName}`;
@@ -48,11 +48,36 @@ export const socialLogin = async (req: Request, res: Response) => {
       fullName = "Apple User";
     }
 
-    let user = await userModel.findOne({
+    let user = (await userModel.findOne({
       email,
-      isBlocked: false,
-      isDeleted: false,
-    });
+    })) as any;
+
+    if (user?.isBlocked) {
+      throw new Error("Your account has been blocked");
+    }
+
+    if (user?.isDeleted) {
+      if (!user.deletedAt) {
+        // Safety check: corrupted data
+        throw new Error("Your account has been deleted");
+      }
+
+      const DELETION_GRACE_PERIOD_DAYS = 30;
+      const deletionDeadline = new Date(user.deletedAt);
+      deletionDeadline.setDate(
+        deletionDeadline.getDate() + DELETION_GRACE_PERIOD_DAYS,
+      );
+
+      if (new Date() <= deletionDeadline) {
+        // Revoke deletion (within 30 days)
+        user.isDeleted = false;
+        user.deletedAt = null;
+        await user.save();
+      } else {
+        // Permanently deleted
+        throw new Error("Your account has been deleted");
+      }
+    }
 
     // === GENERATE UNIQUE REFERRAL CODE ===
     const generateUniqueReferral = async () => {
@@ -88,7 +113,7 @@ export const socialLogin = async (req: Request, res: Response) => {
       await userSettingsModel.findOneAndUpdate(
         { userId: user._id },
         { $setOnInsert: { userId: user._id } },
-        { new: true, upsert: true }
+        { new: true, upsert: true },
       );
 
       await userInfoModel.create({
@@ -109,7 +134,7 @@ export const socialLogin = async (req: Request, res: Response) => {
     const token = jwt.sign(
       { userId: user._id.toString(), email },
       process.env.JWT_SECRET || "123",
-      { expiresIn: "365d" }
+      { expiresIn: "365d" },
     );
 
     userActivityModel.create({
@@ -139,6 +164,22 @@ export const socialLogin = async (req: Request, res: Response) => {
     return INTERNAL_SERVER_ERROR(res);
   }
 };
+
+export const getPolicies = async (req: Request, res: Response) => {
+  try {
+    const settings = await PlatformSettingModel.findOne();
+    if (!settings) {
+      throw new Error("Platform settings not found");
+    }
+    return OK(res, {
+      termsAndConditions: settings.termsAndConditions,
+      privacyPolicy: settings.privacyPolicy,
+    });
+  } catch (e: any) {
+    if (e?.message) return BADREQUEST(res, e.message);
+    return INTERNAL_SERVER_ERROR(res);
+  }
+}
 
 // ********************** TEST Controllers ******************************
 

@@ -251,8 +251,15 @@ export const searchVehicle = async (req: Request, res: Response) => {
       registrationNumber: vehicleRegistration,
     });
 
+    const checkNotificationSetting = await userSettingsModel.findOne({
+      userId: checkData?.userId?._id,
+    });
+
     // Send FCM in user's preferred language
-    if (checkData?.userId?.fcmToken.length) {
+    if (
+      checkData?.userId?.fcmToken.length &&
+      checkNotificationSetting?.notifications
+    ) {
       NotificationService(
         checkData?.userId?.fcmToken,
         "VEHICLE_SEARCHED",
@@ -470,6 +477,11 @@ export const userHome = async (req: Request, res: Response) => {
       return BADREQUEST(res, "User not found");
     }
 
+    const unreadNotifications = await NotificationModel.countDocuments({
+      userId,
+      isRead: false,
+    });
+
     const vehicleSearched = await userActivityModel.find({
       userId,
       type: "VEHICLE_SEARCHED",
@@ -487,6 +499,7 @@ export const userHome = async (req: Request, res: Response) => {
       timesContacted,
       vehicleRegistered: vehicleRegistered?.vehicle.length || 0,
       memberSince,
+      unreadNotifications,
     });
   } catch (e: any) {
     console.error(e);
@@ -616,6 +629,24 @@ export const logout = async (req: Request, res: Response) => {
     await userModel.updateOne(
       { _id: userId },
       { $pull: { fcmToken: fcmToken } },
+    );
+
+    return OK(res, {});
+  } catch (e: any) {
+    console.error(e);
+    if (e?.message) return BADREQUEST(res, e.message);
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};
+
+export const deleteAccount = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.user as any;
+    await userModel.updateOne(
+      { _id: userId },
+      {
+        $set: { isDeleted: true, deletedAt: new Date(), fcmToken: [] },
+      },
     );
 
     return OK(res, {});

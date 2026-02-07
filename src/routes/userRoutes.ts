@@ -1,6 +1,7 @@
 import express from "express";
 import {
   addUpdateUserInfo,
+  deleteAccount,
   deleteVehicle,
   getUserNotifications,
   getUserSettings,
@@ -44,6 +45,8 @@ router.get("/activity", userActivity);
 router.route("/settings").get(getUserSettings).post(updateUserSettings);
 
 router.post("/logout", logout);
+
+router.delete("/delete-account", deleteAccount)
 
 // Notification
 

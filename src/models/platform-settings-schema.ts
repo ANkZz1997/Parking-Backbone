@@ -5,6 +5,8 @@ export interface IPlatformSetting extends Document {
   rewardPerReferral?: number;
   weeklyCallRefreshed?: number;
   weeklyAlertRefreshed?: number;
+  termsAndConditions?: string;
+  privacyPolicy?: string;
 }
 
 const PlatformSettingSchema = new Schema<IPlatformSetting>(
@@ -24,6 +26,14 @@ const PlatformSettingSchema = new Schema<IPlatformSetting>(
     weeklyAlertRefreshed: {
       type: Number,
       default: 10,
+    },
+    termsAndConditions: {
+      type: String,
+      default: "",
+    },
+    privacyPolicy: {
+      type: String,
+      default: "",
     },
   },
   { timestamps: true }

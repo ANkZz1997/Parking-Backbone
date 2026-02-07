@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from "mongoose";
+import mongoose, { Date, Document, Schema } from "mongoose";
 
 export interface IUser extends Document {
   _id: mongoose.Types.ObjectId;
@@ -13,6 +13,7 @@ export interface IUser extends Document {
   isActive: boolean;
   isBlocked: boolean;
   isDeleted: boolean;
+  deletedAt: Date ;
   token: string;
   password: string;
   callBalance: number;
@@ -83,11 +84,15 @@ const UserSchema: Schema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
     token: { type: String },
     password: { type: String },
     referralCode: { type: String },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 export const userModel = mongoose.model<IUser>("User", UserSchema);
