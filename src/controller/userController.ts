@@ -678,6 +678,8 @@ export const getUserNotifications = async (req: Request, res: Response) => {
       .lean();
 
     const totalData = await NotificationModel.countDocuments({ userId });
+    const unreadNotifications =
+      (await NotificationModel.countDocuments({ userId, isRead: false })) || 0;
 
     // Translate each notification to user's current language (only for response)
     const translatedNotifications = notifications.map((notification) => {
@@ -697,6 +699,8 @@ export const getUserNotifications = async (req: Request, res: Response) => {
     return OK(res, {
       notifications: translatedNotifications,
       totalData,
+      unreadNotifications,
+      readNotification: totalData - unreadNotifications,
       page: pageNum,
       limit: limitNum,
       hasNext: totalData > pageNum * limitNum,
