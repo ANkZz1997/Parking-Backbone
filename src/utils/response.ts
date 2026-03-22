@@ -96,3 +96,16 @@ export const INTERNAL_SERVER_ERROR = (
         message: message || "Internal server error",
     });
 };
+
+export const TOO_MANY_REQUESTS = (
+    res: Response,
+    message: any = "Too many requests",
+    data: Data = null,
+) => {
+    return res.status(429).json({
+        success: false,
+        errorCode: 'CALL_LIMIT_EXCEEDED',
+        message,
+        data,
+    });
+};

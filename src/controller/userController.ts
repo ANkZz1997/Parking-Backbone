@@ -1,19 +1,28 @@
 import { Request, Response } from "express";
-import { BADREQUEST, INTERNAL_SERVER_ERROR, OK } from "../utils/response";
+import {
+  BADREQUEST,
+  INTERNAL_SERVER_ERROR,
+  OK,
+  TOO_MANY_REQUESTS,
+} from "../utils/response";
 import { userInfoModel } from "../models/user-info-schema";
 import { userModel } from "../models/user-schema";
 import { userActivityModel } from "../models/user-activity-schema";
 import { userSettingsModel } from "../models/user-setting-schema";
-import { platform } from "os";
 import { PlatformSettingModel } from "../models/platform-settings-schema";
 import { successfulReferralModel } from "../models/successful-referral.schema";
-import { ref } from "process";
 import { NotificationService } from "../utils/fcm";
 import { NotificationModel } from "../models/notification-schema";
 import { makeNonce } from "../middleware/zego-middle";
 import { callModel } from "../models/call-schema";
 import { v4 as uuidv4 } from "uuid";
 import { getTranslation } from "../utils/translations";
+import dayjs from "dayjs";
+import timezone from "dayjs/plugin/timezone";
+import utc from "dayjs/plugin/utc";
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 // Manage Vehicles *********************************************
 
@@ -353,6 +362,46 @@ export const updateCallStatus = async (req: Request, res: Response) => {
     const { receiverId, callId, status = "INITIATED" } = req.query;
 
     if (status == "INITIATED" && receiverId) {
+      const DAILY_CALL_LIMIT = parseInt(process.env.DAILY_CALL_LIMIT || "2");
+      const RESET_HOUR = parseInt(process.env.CALL_LIMIT_RESET_HOUR || "1");
+
+      const nowIST = dayjs().tz("Asia/Kolkata");
+      let windowStart = nowIST
+        .hour(RESET_HOUR)
+        .minute(0)
+        .second(0)
+        .millisecond(0);
+      if (nowIST.hour() < RESET_HOUR) {
+        windowStart = windowStart.subtract(1, "day");
+      }
+
+      const callsInWindow = await callModel.countDocuments({
+        callerId: userId,
+        receiverId: receiverId,
+        status: { $in: ["INITIATED", "RINGING", "ANSWERED", "ENDED"] },
+        createdAt: { $gte: windowStart.toDate() },
+      });
+
+      if (callsInWindow >= DAILY_CALL_LIMIT) {
+        let nextReset = nowIST
+          .hour(RESET_HOUR)
+          .minute(0)
+          .second(0)
+          .millisecond(0);
+        if (nowIST.hour() >= RESET_HOUR) {
+          nextReset = nextReset.add(1, "day");
+        }
+
+        return TOO_MANY_REQUESTS(
+          res,
+          `You can only call the same owner ${DAILY_CALL_LIMIT} times per day.`,
+          {
+            limit: DAILY_CALL_LIMIT,
+            resetAt: nextReset.toISOString(),
+          },
+        );
+      }
+
       const newCall = await callModel.create({
         callId: uuidv4(),
         callerId: userId,
