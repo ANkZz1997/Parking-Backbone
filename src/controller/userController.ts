@@ -378,7 +378,7 @@ export const updateCallStatus = async (req: Request, res: Response) => {
       const callsInWindow = await callModel.countDocuments({
         callerId: userId,
         receiverId: receiverId,
-        status: { $in: ["INITIATED", "RINGING", "ANSWERED", "ENDED"] },
+        status: { $in: ["ANSWERED", "ENDED"] },
         createdAt: { $gte: windowStart.toDate() },
       });
 
