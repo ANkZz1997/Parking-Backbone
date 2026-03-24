@@ -279,7 +279,42 @@ export const searchVehicle = async (req: Request, res: Response) => {
       );
     }
 
-    return OK(res, { fullName, image, userId: _id });
+    const DAILY_CALL_LIMIT = parseInt(process.env.DAILY_CALL_LIMIT || "2");
+    const RESET_HOUR = parseInt(process.env.CALL_LIMIT_RESET_HOUR || "1");
+
+    const nowIST = dayjs().tz("Asia/Kolkata");
+    let windowStart = nowIST
+      .hour(RESET_HOUR)
+      .minute(0)
+      .second(0)
+      .millisecond(0);
+    if (nowIST.hour() < RESET_HOUR) {
+      windowStart = windowStart.subtract(1, "day");
+    }
+
+    let nextReset = nowIST.hour(RESET_HOUR).minute(0).second(0).millisecond(0);
+    if (nowIST.hour() >= RESET_HOUR) {
+      nextReset = nextReset.add(1, "day");
+    }
+
+    const callsInWindow = await callModel.countDocuments({
+      callerId: userId,
+      receiverId: _id,
+      status: { $in: ["ANSWERED", "ENDED"] },
+      createdAt: { $gte: windowStart.toDate() },
+    });
+
+    return OK(res, {
+      fullName,
+      image,
+      userId: _id,
+      callLimit: {
+        limit: DAILY_CALL_LIMIT,
+        used: callsInWindow,
+        exceeded: callsInWindow >= DAILY_CALL_LIMIT,
+        resetAt: nextReset.toISOString(),
+      },
+    });
   } catch (e: any) {
     console.error(e);
     if (e?.message) return BADREQUEST(res, e.message);
@@ -362,45 +397,6 @@ export const updateCallStatus = async (req: Request, res: Response) => {
     const { receiverId, callId, status = "INITIATED" } = req.query;
 
     if (status == "INITIATED" && receiverId) {
-      const DAILY_CALL_LIMIT = parseInt(process.env.DAILY_CALL_LIMIT || "2");
-      const RESET_HOUR = parseInt(process.env.CALL_LIMIT_RESET_HOUR || "1");
-
-      const nowIST = dayjs().tz("Asia/Kolkata");
-      let windowStart = nowIST
-        .hour(RESET_HOUR)
-        .minute(0)
-        .second(0)
-        .millisecond(0);
-      if (nowIST.hour() < RESET_HOUR) {
-        windowStart = windowStart.subtract(1, "day");
-      }
-
-      const callsInWindow = await callModel.countDocuments({
-        callerId: userId,
-        receiverId: receiverId,
-        status: { $in: ["ANSWERED", "ENDED"] },
-        createdAt: { $gte: windowStart.toDate() },
-      });
-
-      if (callsInWindow >= DAILY_CALL_LIMIT) {
-        let nextReset = nowIST
-          .hour(RESET_HOUR)
-          .minute(0)
-          .second(0)
-          .millisecond(0);
-        if (nowIST.hour() >= RESET_HOUR) {
-          nextReset = nextReset.add(1, "day");
-        }
-
-        return TOO_MANY_REQUESTS(
-          res,
-          `You can only call the same owner ${DAILY_CALL_LIMIT} times per day.`,
-          {
-            limit: DAILY_CALL_LIMIT,
-            resetAt: nextReset.toISOString(),
-          },
-        );
-      }
 
       const newCall = await callModel.create({
         callId: uuidv4(),
