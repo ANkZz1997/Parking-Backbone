@@ -13,8 +13,8 @@ export function makeNonce(userId: any) {
     // Please modify serverSecret to your own serverSecret. serverSecret is a string.
     // Example: 'sdfsdfsd323sdfsdf'
     const serverSecret = process.env.ZEGO_SERVER_SECRET || ""; // type: 32 byte length string
-    // Please modify userId to the user's userId.
-    const effectiveTimeInSeconds = 300; //type: number; unit: s; expiration time of token, in seconds.
+    // Please modify userId to the user's userId. userId is a string.
+    const effectiveTimeInSeconds = parseInt(process.env.ZEGO_TOKEN_EXPIRATION_TIME || "172800", 10); //type: number; unit: s; expiration time of token, in seconds.
 
     // When generating a basic authentication token, the payload should be set to an empty string.
     const payload = "";
