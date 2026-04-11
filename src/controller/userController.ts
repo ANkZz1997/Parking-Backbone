@@ -20,6 +20,8 @@ import { getTranslation } from "../utils/translations";
 import dayjs from "dayjs";
 import timezone from "dayjs/plugin/timezone";
 import utc from "dayjs/plugin/utc";
+import { reportModel } from "../models/report-schema";
+import mongoose from "mongoose";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -210,7 +212,7 @@ export const searchVehicle = async (req: Request, res: Response) => {
     const { userId } = req.user as any;
 
     await userActivityModel.create({
-      userId: userId,
+      userId,
       type: "VEHICLE_SEARCHED",
       title: `You have searched ${vehicleRegistration}`,
       registrationNumber: vehicleRegistration,
@@ -219,33 +221,29 @@ export const searchVehicle = async (req: Request, res: Response) => {
     const checkData = (await userInfoModel
       .findOne({
         userId: { $ne: userId },
-        vehicle: {
-          $elemMatch: { vehicleRegistration },
-        },
+        vehicle: { $elemMatch: { vehicleRegistration } },
       })
       .populate("userId")
       .lean()) as any;
 
-    if (!checkData) {
-      return BADREQUEST(res, "Vehicle not found");
-    }
+    if (!checkData) return BADREQUEST(res, "Vehicle not found");
 
-    const { fullName, image, _id } = checkData.userId as any;
+    const { fullName, image, _id, blockedUsers } = checkData.userId as any;
 
-    // Get receiver's language preference
-    const receiverSettings = await userSettingsModel.findOne({
-      userId: checkData?.userId?._id,
-    });
+    // ✅ Check if owner has blocked the searcher
+    const isBlocked =
+      blockedUsers?.some(
+        (id: mongoose.Types.ObjectId) => String(id) === String(userId),
+      ) ?? false;
+
+    // Notifications (unchanged)
+    const receiverSettings = await userSettingsModel.findOne({ userId: _id });
     const language = receiverSettings?.preferredLanguage || "en";
-
-    // Get translation ONLY for FCM push notification
     const translation = getTranslation(
       "VEHICLE_SEARCHED",
       language,
       vehicleRegistration,
     );
-
-    // ✅ ALWAYS store in English in database
     const englishTranslation = getTranslation(
       "VEHICLE_SEARCHED",
       "en",
@@ -253,18 +251,16 @@ export const searchVehicle = async (req: Request, res: Response) => {
     );
 
     await NotificationModel.create({
-      userId: checkData?.userId?._id,
+      userId: _id,
       type: "VEHICLE_SEARCHED",
-      title: englishTranslation.title, // ← Always English
-      body: englishTranslation.body, // ← Always English
+      title: englishTranslation.title,
+      body: englishTranslation.body,
       registrationNumber: vehicleRegistration,
     });
 
     const checkNotificationSetting = await userSettingsModel.findOne({
-      userId: checkData?.userId?._id,
+      userId: _id,
     });
-
-    // Send FCM in user's preferred language
     if (
       checkData?.userId?.fcmToken.length &&
       checkNotificationSetting?.notifications
@@ -273,29 +269,25 @@ export const searchVehicle = async (req: Request, res: Response) => {
         checkData?.userId?.fcmToken,
         "VEHICLE_SEARCHED",
         null,
-        translation.title, // ← User's language for push notification
-        translation.body, // ← User's language for push notification
+        translation.title,
+        translation.body,
         language,
       );
     }
 
+    // Call limit (unchanged)
     const DAILY_CALL_LIMIT = parseInt(process.env.DAILY_CALL_LIMIT || "2");
     const RESET_HOUR = parseInt(process.env.CALL_LIMIT_RESET_HOUR || "1");
-
     const nowIST = dayjs().tz("Asia/Kolkata");
     let windowStart = nowIST
       .hour(RESET_HOUR)
       .minute(0)
       .second(0)
       .millisecond(0);
-    if (nowIST.hour() < RESET_HOUR) {
+    if (nowIST.hour() < RESET_HOUR)
       windowStart = windowStart.subtract(1, "day");
-    }
-
     let nextReset = nowIST.hour(RESET_HOUR).minute(0).second(0).millisecond(0);
-    if (nowIST.hour() >= RESET_HOUR) {
-      nextReset = nextReset.add(1, "day");
-    }
+    if (nowIST.hour() >= RESET_HOUR) nextReset = nextReset.add(1, "day");
 
     const callsInWindow = await callModel.countDocuments({
       callerId: userId,
@@ -308,6 +300,8 @@ export const searchVehicle = async (req: Request, res: Response) => {
       fullName,
       image,
       userId: _id,
+      // ✅ Add blocked flag
+      isBlocked,
       callLimit: {
         limit: DAILY_CALL_LIMIT,
         used: callsInWindow,
@@ -393,8 +387,20 @@ export const initiateCall = async (req: Request, res: Response) => {
 
 export const updateCallStatus = async (req: Request, res: Response) => {
   try {
+    console.log("🔍 Full query:", req.query);
+    console.log("🔍 Full body:", req.body);
     const { userId } = req.user as any;
-    const { receiverId, callId, status = "INITIATED" } = req.query;
+    const {
+      receiverId,
+      callId,
+      status = "INITIATED",
+      registrationNumber = null, // ✅ moved here
+    } = req.query as {
+      receiverId?: string;
+      callId?: string;
+      status?: string;
+      registrationNumber?: string;
+    };
 
     if (status == "INITIATED" && receiverId) {
 
@@ -403,7 +409,9 @@ export const updateCallStatus = async (req: Request, res: Response) => {
         callerId: userId,
         receiverId: receiverId,
         status: "INITIATED",
+        registrationNumber: registrationNumber ?? null,
       });
+      console.log("💾 Saved plate:", newCall.registrationNumber);
 
       return OK(res, { callId: newCall.callId });
     }
@@ -505,11 +513,167 @@ export const updateCallStatus = async (req: Request, res: Response) => {
   }
 };
 
+export const getCallRecords = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.user as any;
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    let { page = 1, limit = 20, direction } = req.query;
+
+    const pageNum = Math.max(1, Number(page));
+    const limitNum = Math.min(50, Math.max(1, Number(limit)));
+
+    const baseFilter: any = {
+      $or: [{ callerId: userObjectId }, { receiverId: userObjectId }],
+      status: { $in: ["ANSWERED", "ENDED"] },
+    };
+
+    if (direction === "outgoing") {
+      delete baseFilter.$or;
+      baseFilter.callerId = userObjectId;
+    } else if (direction === "incoming") {
+      delete baseFilter.$or;
+      baseFilter.receiverId = userObjectId;
+    }
+
+    const [calls, totalData, reportedCallIds] = await Promise.all([
+      callModel
+        .find(baseFilter)
+        .sort({ createdAt: -1 })
+        .skip((pageNum - 1) * limitNum)
+        .limit(limitNum)
+        .populate("callerId", "fullName")
+        .populate("receiverId", "fullName")
+        .lean(),
+
+      callModel.countDocuments(baseFilter),
+
+      // ✅ returns UUID strings — matches call.callId field
+      reportModel.distinct("callId", { reportedBy: userId }),
+    ]);
+
+    // ✅ Set of UUID strings, compared against call.callId (not call._id)
+    const reportedSet = new Set(reportedCallIds.map(String));
+
+    const records = calls.map((call: any) => {
+      const isOutgoing = call.callerId?._id?.toString() === userId.toString();
+      const plateNumber = call.registrationNumber ?? null;
+
+      const otherParty = isOutgoing ? call.receiverId : call.callerId;
+      const otherName: string = otherParty?.fullName || "Unknown";
+      const initials = otherName
+        .trim()
+        .split(" ")
+        .slice(0, 2)
+        .map((w: string) => w[0]?.toUpperCase() ?? "")
+        .join("");
+
+      // ✅ compare UUID string to UUID string
+      const alreadyReported = reportedSet.has(call.callId);
+
+      return {
+        _id: call._id,
+        callId: call.callId,
+        direction: isOutgoing ? "outgoing" : "incoming",
+        registrationNumber: plateNumber,
+        otherPartyInitials: initials,
+        otherPartyName: otherName,
+        startedAt: call.startedAt || null,
+        endedAt: call.endedAt || null,
+        durationInSeconds: call.durationInSeconds || 0,
+        status: call.status,
+        createdAt: call.createdAt,
+        canReport: !isOutgoing, // only incoming calls — receiver reports caller
+        reported: alreadyReported,
+      };
+    });
+
+    return OK(res, {
+      calls: records,
+      totalData,
+      page: pageNum,
+      limit: limitNum,
+      hasNext: totalData > pageNum * limitNum,
+      hasPrevious: pageNum > 1,
+    });
+  } catch (e: any) {
+    console.error(e);
+    if (e?.message) return BADREQUEST(res, e.message);
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};
+
+export const reportCall = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.user as any;
+    const { callId, reason, additionalText, customReason } = req.body;
+
+    // ✅ accept both field names from frontend
+    const extraText: string | null =
+      (additionalText || customReason)?.trim() || null;
+
+    const validReasons = ["SPAM", "ABUSIVE", "OTHER"];
+    if (!reason || !validReasons.includes(reason)) {
+      return BADREQUEST(res, "Invalid report reason");
+    }
+
+    // ✅ find by UUID callId field
+    const callData = await callModel.findOne({ callId });
+    if (!callData) {
+      return BADREQUEST(res, "Call not found");
+    }
+
+    if (String(callData.receiverId) !== String(userId)) {
+      return BADREQUEST(res, "Only the call receiver can report this call");
+    }
+
+    const callerId = callData.callerId;
+
+    // duplicate check — uses same UUID callId, consistent
+    const existingReport = await reportModel.findOne({
+      reportedBy: userId,
+      callId,
+    });
+    if (existingReport) {
+      // ✅ 409 so frontend can show "already reported" state
+      return res
+        .status(409)
+        .json({ success: false, message: "Already reported" });
+    }
+
+    await reportModel.create({
+      reportedBy: userId,
+      reportedUser: callerId,
+      callId, // UUID string
+      reason,
+      additionalText: extraText, // ✅ unified, trimmed
+    });
+
+    await userModel.updateOne(
+      { _id: userId, blockedUsers: { $ne: callerId } },
+      { $push: { blockedUsers: callerId } },
+    );
+
+    await userActivityModel.create({
+      userId,
+      type: "CALL",
+      title: `Reported and blocked a caller`,
+    });
+
+    return OK(res, { message: "Caller has been blocked and report submitted" });
+  } catch (e: any) {
+    console.error(e);
+    if (e?.message) return BADREQUEST(res, e.message);
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};
+
 // Manage Vehicles *********************************************
 
 export const userHome = async (req: Request, res: Response) => {
   try {
     const { userId } = req.user as any;
+    const userObjectId = new mongoose.Types.ObjectId(userId);
 
     const userData = (await userModel
       .findById(userId)
@@ -518,33 +682,84 @@ export const userHome = async (req: Request, res: Response) => {
       )
       .lean()) as any;
 
-    if (!userData) {
-      return BADREQUEST(res, "User not found");
-    }
+    if (!userData) return BADREQUEST(res, "User not found");
 
-    const unreadNotifications = await NotificationModel.countDocuments({
-      userId,
-      isRead: false,
-    });
+    const [
+      unreadNotifications,
+      vehicleSearched,
+      timesContacted,
+      vehicleInfo,
+      recentCalls,
+    ] = await Promise.all([
+      NotificationModel.countDocuments({ userId, isRead: false }),
 
-    const vehicleSearched = await userActivityModel.find({
-      userId,
-      type: "VEHICLE_SEARCHED",
+      userActivityModel.countDocuments({ userId, type: "VEHICLE_SEARCHED" }),
+
+      userActivityModel.countDocuments({ userId, type: "RECEIVED_CALL" }),
+
+      userInfoModel.findOne({ userId }).lean(),
+
+      // ── Latest 3 ANSWERED/ENDED calls (outgoing OR incoming) ──
+      callModel
+        .find({
+          $or: [{ callerId: userObjectId }, { receiverId: userObjectId }],
+          status: { $in: ["ANSWERED", "ENDED"] },
+        })
+        .sort({ createdAt: -1 })
+        .limit(3)
+        .populate("callerId", "fullName")
+        .populate("receiverId", "fullName")
+        .lean(),
+    ]);
+
+    console.log("🕐 Most recent call createdAt check:");
+    const checkCall = (await callModel
+      .findOne({ receiverId: userObjectId })
+      .sort({ createdAt: -1 })
+      .lean()) as any;
+    console.log(
+      "Latest call:",
+      checkCall?.createdAt,
+      "| plate:",
+      checkCall?.registrationNumber,
+      "| status:",
+      checkCall?.status,
+    );
+
+    // ── Shape each recent call for the home screen ──
+    const recentCallRecords = recentCalls.map((call: any) => {
+      const isOutgoing = call.callerId?._id?.toString() === userId.toString();
+      const otherParty = isOutgoing ? call.receiverId : call.callerId;
+      const otherName: string = otherParty?.fullName || "Unknown";
+      const initials = otherName
+        .trim()
+        .split(" ")
+        .slice(0, 2)
+        .map((w: string) => w[0]?.toUpperCase() ?? "")
+        .join("");
+
+      return {
+        _id: call._id,
+        callId: call.callId,
+        direction: isOutgoing ? "outgoing" : "incoming",
+        registrationNumber: call.registrationNumber || null,
+        otherPartyInitials: initials,
+        otherPartyName: otherName,
+        startedAt: call.startedAt || call.createdAt,
+        endedAt: call.endedAt || null,
+        durationInSeconds: call.durationInSeconds || 0,
+        status: call.status,
+      };
     });
-    const timesContacted = await userActivityModel.countDocuments({
-      userId,
-      type: "RECEIVED_CALL",
-    });
-    const vehicleRegistered = await userInfoModel.findOne({ userId });
-    const memberSince = userData?.createdAt || null;
 
     return OK(res, {
       ...userData,
-      vehicleSearched: vehicleSearched.length,
+      vehicleSearched,
       timesContacted,
-      vehicleRegistered: vehicleRegistered?.vehicle.length || 0,
-      memberSince,
+      vehicleRegistered: vehicleInfo?.vehicle.length || 0,
+      memberSince: userData?.createdAt || null,
       unreadNotifications,
+      recentCalls: recentCallRecords, // ✅ new
     });
   } catch (e: any) {
     console.error(e);

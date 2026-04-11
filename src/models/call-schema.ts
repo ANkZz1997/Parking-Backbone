@@ -20,6 +20,7 @@ const CallSchema = new Schema(
     durationInSeconds: { type: Number, default: 0 },
 
     failureReason: { type: String },
+    registrationNumber: { type: String, default: null },
   },
   { timestamps: true },
 );

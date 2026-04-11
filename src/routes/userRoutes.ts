@@ -3,6 +3,7 @@ import {
   addUpdateUserInfo,
   deleteAccount,
   deleteVehicle,
+  getCallRecords,
   getUserNotifications,
   getUserSettings,
   getVehicleById,
@@ -10,6 +11,7 @@ import {
   initiateCall,
   logout,
   readNotifications,
+  reportCall,
   searchVehicle,
   updateCallStatus,
   updateUserSettings,
@@ -33,6 +35,10 @@ router.delete("/delete-vehicle", deleteVehicle);
 router.post("/search-vehicle", searchVehicle);
 
 router.route("/initiate-call").get(initiateCall).patch(updateCallStatus);
+
+router.get("/call-records", getCallRecords);
+
+router.post("/report-call", reportCall);
 
 router.post("/initiate-alert", initiateAlert);
 

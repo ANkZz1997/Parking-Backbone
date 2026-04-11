@@ -13,13 +13,14 @@ export interface IUser extends Document {
   isActive: boolean;
   isBlocked: boolean;
   isDeleted: boolean;
-  deletedAt: Date ;
+  deletedAt: Date;
   token: string;
   password: string;
   callBalance: number;
   alertBalance: number;
   coinEarned?: number;
   referralCode?: string;
+  blockedUsers?: mongoose.Types.ObjectId[];
 }
 
 const UserSchema: Schema = new Schema<IUser>(
@@ -91,6 +92,10 @@ const UserSchema: Schema = new Schema<IUser>(
     token: { type: String },
     password: { type: String },
     referralCode: { type: String },
+    blockedUsers: {
+      type: [{ type: Schema.Types.ObjectId, ref: "User" }],
+      default: [],
+    },
   },
   { timestamps: true },
 );
