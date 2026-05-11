@@ -107,6 +107,14 @@ export const addUpdateUserInfo = async (req: Request, res: Response) => {
       { new: true, upsert: true },
     );
 
+    const MAX_VEHICLES = parseInt(process.env.MAX_VEHICLES_PER_USER || "3");
+    if (userInfo.vehicle && userInfo.vehicle.length >= MAX_VEHICLES) {
+      return BADREQUEST(
+        res,
+        `Maximum ${MAX_VEHICLES} vehicles allowed per account`,
+      );
+    }
+
     // === REFERRAL LOGIC (FIRST USE ONLY) ===
     if (userInfo.modelUseCount === 0 && referralCode) {
       const referringUser = await userModel.findOne({
@@ -296,6 +304,13 @@ export const searchVehicle = async (req: Request, res: Response) => {
       createdAt: { $gte: windowStart.toDate() },
     });
 
+    if (callsInWindow >= DAILY_CALL_LIMIT) {
+      return TOO_MANY_REQUESTS(
+        res,
+        "Daily call limit reached for this vehicle",
+      );
+    }
+
     return OK(res, {
       fullName,
       image,
@@ -305,7 +320,7 @@ export const searchVehicle = async (req: Request, res: Response) => {
       callLimit: {
         limit: DAILY_CALL_LIMIT,
         used: callsInWindow,
-        exceeded: callsInWindow >= DAILY_CALL_LIMIT,
+        exceeded: false,
         resetAt: nextReset.toISOString(),
       },
     });
@@ -320,6 +335,21 @@ export const initiateAlert = async (req: Request, res: Response) => {
   try {
     const { userId } = req.user as any;
     const { priorityHigh, receiverId } = req.body;
+
+    const DAILY_ALERT_LIMIT = parseInt(process.env.DAILY_ALERT_LIMIT || "3");
+    const nowIST = dayjs().tz("Asia/Kolkata");
+    const alertWindowStart = nowIST.startOf("day").toDate();
+
+    const alertsSentToday = await NotificationModel.countDocuments({
+      senderId: userId,
+      userId: receiverId,
+      type: { $in: ["ALERT_HIGH", "ALERT_LOW"] },
+      createdAt: { $gte: alertWindowStart },
+    });
+
+    if (alertsSentToday >= DAILY_ALERT_LIMIT) {
+      return TOO_MANY_REQUESTS(res, "Alert limit reached for today");
+    }
 
     const receiverData = (await userModel
       .findById(receiverId)
@@ -403,7 +433,6 @@ export const updateCallStatus = async (req: Request, res: Response) => {
     };
 
     if (status == "INITIATED" && receiverId) {
-
       const newCall = await callModel.create({
         callId: uuidv4(),
         callerId: userId,
