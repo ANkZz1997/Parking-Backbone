@@ -238,14 +238,18 @@ export const searchVehicle = async (req: Request, res: Response) => {
 
     const { fullName, image, _id, blockedUsers } = checkData.userId as any;
 
-    // ✅ Check if owner has blocked the searcher
+    const receiverSettings = await userSettingsModel.findOne({ userId: _id });
+    if (receiverSettings?.profileVisibility === false) {
+      return BADREQUEST(res, "Vehicle not found");
+    }
+
+    // Check if owner has blocked the searcher
     const isBlocked =
       blockedUsers?.some(
         (id: mongoose.Types.ObjectId) => String(id) === String(userId),
       ) ?? false;
 
-    // Notifications (unchanged)
-    const receiverSettings = await userSettingsModel.findOne({ userId: _id });
+    // Notifications
     const language = receiverSettings?.preferredLanguage || "en";
     const translation = getTranslation(
       "VEHICLE_SEARCHED",
@@ -266,12 +270,8 @@ export const searchVehicle = async (req: Request, res: Response) => {
       registrationNumber: vehicleRegistration,
     });
 
-    const checkNotificationSetting = await userSettingsModel.findOne({
-      userId: _id,
-    });
     if (
-      checkData?.userId?.fcmToken.length &&
-      checkNotificationSetting?.notifications
+      checkData?.userId?.fcmToken.length && receiverSettings?.notifications !== false
     ) {
       NotificationService(
         checkData?.userId?.fcmToken,
@@ -283,10 +283,14 @@ export const searchVehicle = async (req: Request, res: Response) => {
       );
     }
 
-    // Call limit (unchanged)
+    // Rate limit config
     const DAILY_CALL_LIMIT = parseInt(process.env.DAILY_CALL_LIMIT || "2");
+    const DAILY_ALERT_LIMIT = parseInt(process.env.DAILY_ALERT_LIMIT || "3");
     const RESET_HOUR = parseInt(process.env.CALL_LIMIT_RESET_HOUR || "1");
+
     const nowIST = dayjs().tz("Asia/Kolkata");
+
+    // Call window — resets at RESET_HOUR (e.g. 1 AM IST)
     let windowStart = nowIST
       .hour(RESET_HOUR)
       .minute(0)
@@ -294,34 +298,44 @@ export const searchVehicle = async (req: Request, res: Response) => {
       .millisecond(0);
     if (nowIST.hour() < RESET_HOUR)
       windowStart = windowStart.subtract(1, "day");
+
     let nextReset = nowIST.hour(RESET_HOUR).minute(0).second(0).millisecond(0);
     if (nowIST.hour() >= RESET_HOUR) nextReset = nextReset.add(1, "day");
 
-    const callsInWindow = await callModel.countDocuments({
-      callerId: userId,
-      receiverId: _id,
-      status: { $in: ["ANSWERED", "ENDED"] },
-      createdAt: { $gte: windowStart.toDate() },
-    });
+    // Alert window — resets at midnight IST
+    const alertWindowStart = nowIST.startOf("day").toDate();
 
-    if (callsInWindow >= DAILY_CALL_LIMIT) {
-      return TOO_MANY_REQUESTS(
-        res,
-        "Daily call limit reached for this vehicle",
-      );
-    }
+    // Fetch both limits in parallel
+    const [callsInWindow, alertsSentToday] = await Promise.all([
+      callModel.countDocuments({
+        callerId: userId,
+        receiverId: _id,
+        status: { $in: ["ANSWERED", "ENDED"] },
+        createdAt: { $gte: windowStart.toDate() },
+      }),
+      NotificationModel.countDocuments({
+        senderId: userId,
+        userId: _id,
+        type: { $in: ["ALERT_HIGH", "ALERT_LOW"] },
+        createdAt: { $gte: alertWindowStart },
+      }),
+    ]);
 
     return OK(res, {
       fullName,
       image,
       userId: _id,
-      // ✅ Add blocked flag
       isBlocked,
       callLimit: {
         limit: DAILY_CALL_LIMIT,
         used: callsInWindow,
-        exceeded: false,
+        exceeded: callsInWindow >= DAILY_CALL_LIMIT,
         resetAt: nextReset.toISOString(),
+      },
+      alertLimit: {
+        limit: DAILY_ALERT_LIMIT,
+        used: alertsSentToday,
+        exceeded: alertsSentToday >= DAILY_ALERT_LIMIT,
       },
     });
   } catch (e: any) {
@@ -335,21 +349,6 @@ export const initiateAlert = async (req: Request, res: Response) => {
   try {
     const { userId } = req.user as any;
     const { priorityHigh, receiverId } = req.body;
-
-    const DAILY_ALERT_LIMIT = parseInt(process.env.DAILY_ALERT_LIMIT || "3");
-    const nowIST = dayjs().tz("Asia/Kolkata");
-    const alertWindowStart = nowIST.startOf("day").toDate();
-
-    const alertsSentToday = await NotificationModel.countDocuments({
-      senderId: userId,
-      userId: receiverId,
-      type: { $in: ["ALERT_HIGH", "ALERT_LOW"] },
-      createdAt: { $gte: alertWindowStart },
-    });
-
-    if (alertsSentToday >= DAILY_ALERT_LIMIT) {
-      return TOO_MANY_REQUESTS(res, "Alert limit reached for today");
-    }
 
     const receiverData = (await userModel
       .findById(receiverId)
@@ -382,13 +381,13 @@ export const initiateAlert = async (req: Request, res: Response) => {
     });
 
     // Send FCM in user's preferred language
-    if (receiverData?.fcmToken?.length) {
+    if (receiverData?.fcmToken?.length && receiverSettings?.notifications !== false) {
       NotificationService(
         receiverData?.fcmToken,
         notificationType,
         null,
-        translation.title, // ← User's language for push
-        translation.body, // ← User's language for push
+        translation.title,
+        translation.body,
         language,
       );
     }
