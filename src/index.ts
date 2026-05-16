@@ -24,6 +24,10 @@ app.use(
   })
 );
 
+app.get("/", (_, res: any) => {
+  res.send("Hello world entry point!! Welcome To WAYZE...🚀✅");
+});
+
 app.use("/api/auth", authRoutes);
 app.use("/api/user", checkAuth, userRoutes);
 
