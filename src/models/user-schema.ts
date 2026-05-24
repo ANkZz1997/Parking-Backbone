@@ -14,6 +14,12 @@ export interface IUser extends Document {
   isBlocked: boolean;
   isDeleted: boolean;
   deletedAt: Date;
+  deletionState?: {
+    status: "ACTIVE" | "PENDING_DELETION" | "DELETED";
+    requestedAt: Date | null;
+    scheduledAt: Date | null;
+    completedAt: Date | null;
+  };
   token: string;
   password: string;
   callBalance: number;
@@ -88,6 +94,16 @@ const UserSchema: Schema = new Schema<IUser>(
     deletedAt: {
       type: Date,
       default: null,
+    },
+    deletionState: {
+      status: {
+        type: String,
+        enum: ["ACTIVE", "PENDING_DELETION", "DELETED"],
+        default: "ACTIVE",
+      },
+      requestedAt: { type: Date, default: null },
+      scheduledAt: { type: Date, default: null },
+      completedAt: { type: Date, default: null },
     },
     token: { type: String },
     password: { type: String },

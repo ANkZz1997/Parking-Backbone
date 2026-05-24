@@ -5,12 +5,14 @@ import path from "path";
 import dotenv from "dotenv";
 import authRoutes from "./routes/authRoutes";
 import userRoutes from "./routes/userRoutes";
-
+import { startDeletionCron } from "./cron/finalizeDeletes";
 import auth from "./middleware/auth-middleware";
 import checkAuth from "./middleware/auth-middleware";
 import { initializeFirebase } from "./utils/fcm";
 
 dotenv.config();
+
+startDeletionCron();
 
 const app: Application = express();
 initializeFirebase();

@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import { userModel } from "../models/user-schema";
+import { deletedEmailModel } from "../models/deleted-email-schema";
 import { BADREQUEST, INTERNAL_SERVER_ERROR, OK } from "../utils/response";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
@@ -56,27 +57,41 @@ export const socialLogin = async (req: Request, res: Response) => {
       throw new Error("Your account has been blocked");
     }
 
-    if (user?.isDeleted) {
-      if (!user.deletedAt) {
-        // Safety check: corrupted data
-        throw new Error("Your account has been deleted");
-      }
-
-      const DELETION_GRACE_PERIOD_DAYS = 30;
-      const deletionDeadline = new Date(user.deletedAt);
-      deletionDeadline.setDate(
-        deletionDeadline.getDate() + DELETION_GRACE_PERIOD_DAYS,
+    if (user?.deletionState?.status === "PENDING_DELETION") {
+      await userModel.updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            "deletionState.status": "ACTIVE",
+            "deletionState.requestedAt": null,
+            "deletionState.scheduledAt": null,
+            "deletionState.completedAt": null,
+            isActive: true,
+          },
+        },
       );
 
-      if (new Date() <= deletionDeadline) {
-        // Revoke deletion (within 30 days)
-        user.isDeleted = false;
-        user.deletedAt = null;
-        await user.save();
-      } else {
-        // Permanently deleted
-        throw new Error("Your account has been deleted");
+      user = await userModel.findById(user._id);
+    }
+
+    if (user?.deletionState?.status === "DELETED") {
+      throw new Error(
+        "This account was permanently deleted and cannot be restored",
+      );
+    }
+
+    if (!user) {
+      const tombstoned = await deletedEmailModel.findOne({
+        email: email.toLowerCase().trim(),
+      });
+
+      if (tombstoned) {
+        throw new Error(
+          "An account with this email was permanently deleted and cannot be re-registered",
+        );
       }
+
+      // create user here
     }
 
     // === GENERATE UNIQUE REFERRAL CODE ===
@@ -179,7 +194,7 @@ export const getPolicies = async (req: Request, res: Response) => {
     if (e?.message) return BADREQUEST(res, e.message);
     return INTERNAL_SERVER_ERROR(res);
   }
-}
+};
 
 // ********************** TEST Controllers ******************************
 
@@ -204,6 +219,15 @@ export const registerUser = async (req: Request, res: Response) => {
 
     if (checkExist) {
       throw new Error("Email already exist");
+    }
+
+    const isTombstoned = await deletedEmailModel.findOne({
+      email: email.toLowerCase(),
+    });
+    if (isTombstoned) {
+      throw new Error(
+        "An account with this email was permanently deleted and cannot be re-registered",
+      );
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);

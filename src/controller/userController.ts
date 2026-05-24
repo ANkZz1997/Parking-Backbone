@@ -92,12 +92,25 @@ export const addUpdateUserInfo = async (req: Request, res: Response) => {
     const reg = vehicleRegistration.trim().toUpperCase();
 
     // === ENSURE VEHICLE UNIQUE (DB INDEX STILL REQUIRED) ===
-    const existingVehicle = await userInfoModel.findOne({
-      "vehicle.vehicleRegistration": reg,
-    });
+    const existingVehicle = await userInfoModel
+      .findOne({ "vehicle.vehicleRegistration": reg })
+      .populate("userId", "deletionState");
 
     if (existingVehicle) {
-      return BADREQUEST(res, "Vehicle already registered");
+      const ownerStatus = (existingVehicle.userId as any)?.deletionState
+        ?.status;
+
+      if (ownerStatus === "DELETED") {
+        // Fully deleted — remove old vehicle entry so new user can claim it
+        await userInfoModel.updateOne(
+          { "vehicle.vehicleRegistration": reg },
+          { $pull: { vehicle: { vehicleRegistration: reg } } },
+        );
+        // Fall through — allow registration below
+      } else {
+        // ACTIVE or PENDING_DELETION — block registration
+        return BADREQUEST(res, "Vehicle already registered");
+      }
     }
 
     // === UPSERT USER INFO ===
@@ -236,6 +249,15 @@ export const searchVehicle = async (req: Request, res: Response) => {
 
     if (!checkData) return BADREQUEST(res, "Vehicle not found");
 
+    const ownerDeletionStatus = (checkData.userId as any)?.deletionState
+      ?.status;
+    if (
+      ownerDeletionStatus === "PENDING_DELETION" ||
+      ownerDeletionStatus === "DELETED"
+    ) {
+      return BADREQUEST(res, "Vehicle not found");
+    }
+
     const { fullName, image, _id, blockedUsers } = checkData.userId as any;
 
     const receiverSettings = await userSettingsModel.findOne({ userId: _id });
@@ -271,7 +293,8 @@ export const searchVehicle = async (req: Request, res: Response) => {
     });
 
     if (
-      checkData?.userId?.fcmToken.length && receiverSettings?.notifications !== false
+      checkData?.userId?.fcmToken.length &&
+      receiverSettings?.notifications !== false
     ) {
       NotificationService(
         checkData?.userId?.fcmToken,
@@ -381,7 +404,10 @@ export const initiateAlert = async (req: Request, res: Response) => {
     });
 
     // Send FCM in user's preferred language
-    if (receiverData?.fcmToken?.length && receiverSettings?.notifications !== false) {
+    if (
+      receiverData?.fcmToken?.length &&
+      receiverSettings?.notifications !== false
+    ) {
       NotificationService(
         receiverData?.fcmToken,
         notificationType,
@@ -930,14 +956,31 @@ export const logout = async (req: Request, res: Response) => {
 export const deleteAccount = async (req: Request, res: Response) => {
   try {
     const { userId } = req.user as any;
+
     await userModel.updateOne(
       { _id: userId },
       {
-        $set: { isDeleted: true, deletedAt: new Date(), fcmToken: [] },
+        $set: {
+          "deletionState.status": "PENDING_DELETION",
+          "deletionState.requestedAt": new Date(),
+          "deletionState.scheduledAt": dayjs().add(2, "minutes").toDate(),
+          fcmToken: [],
+          isActive: false,
+        },
       },
     );
 
-    return OK(res, {});
+    await userActivityModel.create({
+      userId,
+      type: "DELETE_ACCOUNT",
+      title:
+        "Account deletion requested. Will be permanently deleted in 2 minutes.",
+    });
+
+    return OK(res, {
+      message:
+        "Your account will be permanently deleted in 2 minutes. Log back in to cancel.",
+    });
   } catch (e: any) {
     console.error(e);
     if (e?.message) return BADREQUEST(res, e.message);
