@@ -3,7 +3,7 @@ import { userModel } from "../models/user-schema";
 import { deletedEmailModel } from "../models/deleted-email-schema";
 
 export const startDeletionCron = () => {
-  cron.schedule("8 0 * * *", async () => {
+  cron.schedule("30 20 * * *", async () => {
     const overdueUsers = await userModel.find({
       "deletionState.status": "PENDING_DELETION",
       "deletionState.scheduledAt": { $lte: new Date() },

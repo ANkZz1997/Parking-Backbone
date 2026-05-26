@@ -963,7 +963,7 @@ export const deleteAccount = async (req: Request, res: Response) => {
         $set: {
           "deletionState.status": "PENDING_DELETION",
           "deletionState.requestedAt": new Date(),
-          "deletionState.scheduledAt": dayjs().add(2, "minutes").toDate(),
+          "deletionState.scheduledAt": dayjs().add(14, "days").toDate(),
           fcmToken: [],
           isActive: false,
         },
@@ -974,12 +974,12 @@ export const deleteAccount = async (req: Request, res: Response) => {
       userId,
       type: "DELETE_ACCOUNT",
       title:
-        "Account deletion requested. Will be permanently deleted in 2 minutes.",
+        "Account deletion requested. Will be permanently deleted in 14 days.",
     });
 
     return OK(res, {
       message:
-        "Your account will be permanently deleted in 2 minutes. Log back in to cancel.",
+        "Your account will be permanently deleted in 14 days. Log back in to cancel.",
     });
   } catch (e: any) {
     console.error(e);
