@@ -18,6 +18,8 @@ import { platform } from "os";
 import { PlatformSettingModel } from "../models/platform-settings-schema";
 
 export const socialLogin = async (req: Request, res: Response) => {
+  const session = await mongoose.startSession();
+
   try {
     let {
       firstName,
@@ -33,25 +35,38 @@ export const socialLogin = async (req: Request, res: Response) => {
       throw new Error("Invalid device type");
     }
 
+    const normalizedEmail = String(email || "")
+      .trim()
+      .toLowerCase();
+    const normalizedFcmToken =
+      typeof fcmToken === "string" ? fcmToken.trim() : "";
+
+    if (!normalizedEmail) {
+      throw new Error("Email is required");
+    }
+
     if (deviceType === "ANDROID") {
-      if (!firstName || !lastName || !email || !fcmToken) {
+      if (!firstName || !lastName || !normalizedFcmToken) {
         throw new Error(
           "For Android: Firstname, Lastname, Email, and FCM-Token are required",
         );
       }
-      fullName = `${firstName} ${lastName}`;
+      fullName =
+        `${String(firstName).trim()} ${String(lastName).trim()}`.trim();
     } else {
-      if (!email || !fcmToken) {
-        throw new Error("For iOS/Web: Email and FCM-Token are required");
+      if (deviceType !== "WEB" && !normalizedFcmToken) {
+        throw new Error("For iOS: Email and FCM-Token are required");
       }
-      firstName = "Apple";
-      lastName = "User";
-      fullName = "Apple User";
+
+      firstName = String(firstName || "").trim() || "User";
+      lastName = String(lastName || "").trim() || "";
+      fullName =
+        String(fullName || "").trim() ||
+        `${firstName} ${lastName}`.trim() ||
+        "User";
     }
 
-    let user = (await userModel.findOne({
-      email,
-    })) as any;
+    let user = (await userModel.findOne({ email: normalizedEmail })) as any;
 
     if (user?.isBlocked) {
       throw new Error("Your account has been blocked");
@@ -82,7 +97,7 @@ export const socialLogin = async (req: Request, res: Response) => {
 
     if (!user) {
       const tombstoned = await deletedEmailModel.findOne({
-        email: email.toLowerCase().trim(),
+        email: normalizedEmail,
       });
 
       if (tombstoned) {
@@ -91,74 +106,87 @@ export const socialLogin = async (req: Request, res: Response) => {
         );
       }
 
-      // create user here
+      const generateUniqueReferral = async () => {
+        let code = "";
+        let exists = true;
+
+        while (exists) {
+          code = crypto.randomBytes(4).toString("hex").toUpperCase();
+          const found = await userModel
+            .findOne({ referralCode: code })
+            .session(session);
+          if (!found) exists = false;
+        }
+
+        return code;
+      };
+
+      await session.withTransaction(async () => {
+        const referralCode = await generateUniqueReferral();
+
+        const createdUsers = await userModel.create(
+          [
+            {
+              firstName,
+              lastName,
+              fullName,
+              email: normalizedEmail,
+              deviceType,
+              fcmToken: normalizedFcmToken ? [normalizedFcmToken] : [],
+              phoneNumber,
+              referralCode,
+            },
+          ],
+          { session },
+        );
+
+        user = createdUsers[0];
+
+        await userSettingsModel.findOneAndUpdate(
+          { userId: user._id },
+          { $setOnInsert: { userId: user._id } },
+          { new: true, upsert: true, session },
+        );
+
+        await userInfoModel.create(
+          [
+            {
+              userId: user._id,
+              emergencyContact: null,
+              modelUseCount: 0,
+              vehicle: [],
+            },
+          ],
+          { session },
+        );
+      });
     }
 
-    // === GENERATE UNIQUE REFERRAL CODE ===
-    const generateUniqueReferral = async () => {
-      let code;
-      let exists = true;
-
-      while (exists) {
-        code = crypto.randomBytes(4).toString("hex").toUpperCase(); // e.g., "A3F92CDE"
-        const found = await userModel.findOne({ referralCode: code });
-        if (!found) exists = false;
-      }
-
-      return code;
-    };
-
-    // === CREATE USER IF NOT EXIST ===
-    if (!user) {
-      const referralCode = await generateUniqueReferral();
-
-      user = await userModel.create({
-        firstName,
-        lastName,
-        fullName,
-        email,
-        deviceType,
-        fcmToken: [fcmToken],
-        phoneNumber,
-        referralCode, // NEW FIELD
-        vehicle: [],
-        emergencyContact: null,
-      });
-
-      await userSettingsModel.findOneAndUpdate(
-        { userId: user._id },
-        { $setOnInsert: { userId: user._id } },
-        { new: true, upsert: true },
+    if (normalizedFcmToken) {
+      await userModel.updateOne(
+        { _id: user._id, fcmToken: { $ne: normalizedFcmToken } },
+        { $push: { fcmToken: normalizedFcmToken } },
       );
-
-      await userInfoModel.create({
-        userId: user._id,
-        emergencyContact: null,
-        modelUseCount: 0,
-        vehicle: [],
-      });
+      user = await userModel.findById(user._id);
     }
 
-    // === UPDATE FCM TOKEN ===
-    if (!user.fcmToken.includes(fcmToken)) {
-      user.fcmToken.push(fcmToken);
-      await user.save();
+    if (!process.env.JWT_SECRET) {
+      throw new Error("JWT configuration missing");
     }
 
-    // === JWT ===
     const token = jwt.sign(
-      { userId: user._id.toString(), email },
-      process.env.JWT_SECRET || "123",
+      { userId: user._id.toString(), email: normalizedEmail },
+      process.env.JWT_SECRET,
       { expiresIn: "365d" },
     );
 
-    userActivityModel.create({
+    await userActivityModel.create({
       userId: user._id,
       type: "LOGIN",
       title: "You have successfully logged in",
     });
 
-    const responseUser = {
+    return OK(res, {
       _id: user._id,
       firstName: user.firstName,
       lastName: user.lastName,
@@ -167,16 +195,18 @@ export const socialLogin = async (req: Request, res: Response) => {
       phoneNumber: user.phoneNumber,
       deviceType: user.deviceType,
       fcmToken: user.fcmToken,
-      referralCode: user.referralCode, // RETURN REFERRAL CODE
+      referralCode: user.referralCode,
       alertBalance: user.alertBalance,
       callBalance: user.callBalance,
       token,
-    };
-
-    return OK(res, responseUser);
+    });
   } catch (e: any) {
+    console.error(e);
+    if (e?.code === 11000) return BADREQUEST(res, "Account already exists");
     if (e?.message) return BADREQUEST(res, e.message);
     return INTERNAL_SERVER_ERROR(res);
+  } finally {
+    await session.endSession();
   }
 };
 
@@ -206,23 +236,32 @@ export const registerUser = async (req: Request, res: Response) => {
       fullName,
       email,
       phoneNumber = null,
-      fcmToken,
+      fcmToken = "",
       deviceType,
       password,
     } = req.body;
 
-    if (!firstName || !lastName || !email || !password) {
+    const normalizedEmail = String(email || "")
+      .trim()
+      .toLowerCase();
+    const normalizedFcmToken =
+      typeof fcmToken === "string" ? fcmToken.trim() : "";
+
+    if (!firstName || !lastName || !normalizedEmail || !password) {
       throw new Error("First Name, Last Name, Password & Email are required");
     }
 
-    const checkExist = await userModel.findOne({ email });
+    if (!["ANDROID", "IOS", "WEB"].includes(deviceType)) {
+      throw new Error("Invalid device type");
+    }
 
+    const checkExist = await userModel.findOne({ email: normalizedEmail });
     if (checkExist) {
-      throw new Error("Email already exist");
+      throw new Error("Email already exists");
     }
 
     const isTombstoned = await deletedEmailModel.findOne({
-      email: email.toLowerCase(),
+      email: normalizedEmail,
     });
     if (isTombstoned) {
       throw new Error(
@@ -233,22 +272,31 @@ export const registerUser = async (req: Request, res: Response) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const data = await userModel.create({
-      firstName,
-      lastName,
-      fullName,
-      email,
+      firstName: String(firstName).trim(),
+      lastName: String(lastName).trim(),
+      fullName:
+        String(fullName || "").trim() ||
+        `${String(firstName).trim()} ${String(lastName).trim()}`.trim(),
+      email: normalizedEmail,
       phoneNumber,
-      fcmToken,
+      fcmToken: normalizedFcmToken ? [normalizedFcmToken] : [],
       deviceType,
       password: hashedPassword,
     });
 
-    return OK(res, { ...data, password: null });
+    return OK(res, {
+      _id: data._id,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      fullName: data.fullName,
+      email: data.email,
+      phoneNumber: data.phoneNumber,
+      deviceType: data.deviceType,
+    });
   } catch (e: any) {
-    if (e?.message) {
-      return BADREQUEST(res, e.message);
-    }
-
+    console.error(e);
+    if (e?.code === 11000) return BADREQUEST(res, "Email already exists");
+    if (e?.message) return BADREQUEST(res, e.message);
     return INTERNAL_SERVER_ERROR(res);
   }
 };
@@ -256,26 +304,90 @@ export const registerUser = async (req: Request, res: Response) => {
 export const loginUser = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) {
+
+    const normalizedEmail = String(email || "")
+      .trim()
+      .toLowerCase();
+
+    if (!normalizedEmail || !password) {
       throw new Error("Email and Password are required");
     }
-    const user = await userModel.findOne({ email });
+
+    const user = (await userModel.findOne({ email: normalizedEmail })) as any;
     if (!user) {
       throw new Error("Invalid email or password");
+    }
+
+    if (user?.isBlocked) {
+      throw new Error("Your account has been blocked");
+    }
+
+    if (user?.deletionState?.status === "DELETED") {
+      throw new Error(
+        "This account was permanently deleted and cannot be restored",
+      );
+    }
+
+    if (user?.deletionState?.status === "PENDING_DELETION") {
+      await userModel.updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            "deletionState.status": "ACTIVE",
+            "deletionState.requestedAt": null,
+            "deletionState.scheduledAt": null,
+            "deletionState.completedAt": null,
+            isActive: true,
+          },
+        },
+      );
+    }
+
+    if (!user.password) {
+      throw new Error(
+        "This account uses social login. Please continue with Google/Apple.",
+      );
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       throw new Error("Invalid email or password");
     }
-    const userData = user.toObject();
-    // delete userData?.password;
+
+    if (!process.env.JWT_SECRET) {
+      throw new Error("JWT configuration missing");
+    }
+
+    const token = jwt.sign(
+      { userId: user._id.toString(), email: normalizedEmail },
+      process.env.JWT_SECRET,
+      { expiresIn: "365d" },
+    );
+
+    await userActivityModel.create({
+      userId: user._id,
+      type: "LOGIN",
+      title: "You have successfully logged in",
+    });
 
     return OK(res, {
       message: "Login Successful",
-      user: userData,
+      user: {
+        _id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        fullName: user.fullName,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        deviceType: user.deviceType,
+        referralCode: user.referralCode,
+        alertBalance: user.alertBalance,
+        callBalance: user.callBalance,
+      },
+      token,
     });
   } catch (e: any) {
+    console.error(e);
     if (e?.message) {
       return BADREQUEST(res, e.message);
     }

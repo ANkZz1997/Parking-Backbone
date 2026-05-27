@@ -44,38 +44,57 @@ export const userData = async (req: Request, res: Response) => {
 
 export const getVehicleById = async (req: Request, res: Response) => {
   try {
-    const { vehicleId } = req.query;
+    const vehicleId = String(req.query.vehicleId || "");
     const { userId: id } = req.user as any;
+
+    if (!vehicleId) {
+      return BADREQUEST(res, "Vehicle ID is required");
+    }
 
     const userInfo = await userInfoModel.findOne({ userId: id });
 
-    const vehicle = userInfo?.vehicle.find(
-      (v: any) => v._id?.toString() === vehicleId,
+    if (!userInfo) {
+      return BADREQUEST(res, "User info not found");
+    }
+
+    const vehicle = userInfo.vehicle.find(
+      (v: any) => String(v._id) === vehicleId,
     );
 
     if (!vehicle) {
       return BADREQUEST(res, "Vehicle not found");
     }
 
-    const vehicleSearched = await userActivityModel
-      .find({
-        userId: id,
-        registrationNumber: vehicle.vehicleRegistration,
-        type: "VEHICLE_SEARCHED",
-      })
-      .sort({ createdAt: -1 });
+    const vehicleCreatedAt = vehicle.createdAt
+      ? new Date(vehicle.createdAt)
+      : new Date(0);
 
-    const responseData = {
+    const searchQuery = {
+      userId: { $ne: id },
+      registrationNumber: vehicle.vehicleRegistration,
+      type: "VEHICLE_SEARCHED",
+      createdAt: { $gte: vehicleCreatedAt },
+    };
+
+    const [searches, lastSearchDoc, contactRequests] = await Promise.all([
+      userActivityModel.countDocuments(searchQuery),
+      userActivityModel.findOne(searchQuery).sort({ createdAt: -1 }),
+      callModel.countDocuments({
+        receiverId: id,
+        registrationNumber: vehicle.vehicleRegistration,
+        createdAt: { $gte: vehicleCreatedAt },
+      }),
+    ]);
+
+    return OK(res, {
       plateNumber: vehicle.vehicleRegistration,
       vehicleType: vehicle.wheelType,
       contactPhone: userInfo?.emergencyContact || "",
-      searches: vehicleSearched.length,
-      contactRequests: 0,
-      lastSearched: vehicleSearched[0]?.createdAt || null,
-      createdAt: vehicle.createdAt,
-    };
-
-    return OK(res, responseData);
+      searches,
+      contactRequests,
+      lastSearched: lastSearchDoc?.createdAt || null,
+      createdAt: vehicle.createdAt || null,
+    });
   } catch (e: any) {
     console.error(e);
     if (e?.message) return BADREQUEST(res, e.message);
@@ -84,129 +103,200 @@ export const getVehicleById = async (req: Request, res: Response) => {
 };
 
 export const addUpdateUserInfo = async (req: Request, res: Response) => {
+  const session = await mongoose.startSession();
+
   try {
     const { wheelType, vehicleRegistration, emergencyContact, referralCode } =
       req.body;
     const { userId: id } = req.user as any;
 
-    const reg = vehicleRegistration.trim().toUpperCase();
+    if (!vehicleRegistration || wheelType === undefined || wheelType === null) {
+      return BADREQUEST(res, "wheelType and vehicleRegistration are required");
+    }
 
-    // === ENSURE VEHICLE UNIQUE (DB INDEX STILL REQUIRED) ===
-    const existingVehicle = await userInfoModel
-      .findOne({ "vehicle.vehicleRegistration": reg })
-      .populate("userId", "deletionState");
+    const normalizedWheelType = Number(wheelType);
+    if (!VALID_WHEEL_TYPES.includes(normalizedWheelType as any)) {
+      return BADREQUEST(res, "Invalid wheel type");
+    }
 
-    if (existingVehicle) {
-      const ownerStatus = (existingVehicle.userId as any)?.deletionState
-        ?.status;
+    const reg = normalizeRegistration(vehicleRegistration);
+    if (!reg) {
+      return BADREQUEST(res, "Vehicle registration is required");
+    }
 
-      if (ownerStatus === "DELETED") {
-        // Fully deleted — remove old vehicle entry so new user can claim it
-        await userInfoModel.updateOne(
-          { "vehicle.vehicleRegistration": reg },
-          { $pull: { vehicle: { vehicleRegistration: reg } } },
-        );
-        // Fall through — allow registration below
-      } else {
-        // ACTIVE or PENDING_DELETION — block registration
-        return BADREQUEST(res, "Vehicle already registered");
+    let updatedUserInfo: any = null;
+
+    await session.withTransaction(async () => {
+      const existingVehicleDoc = await userInfoModel
+        .findOne({ "vehicle.vehicleRegistration": reg })
+        .populate("userId", "deletionState")
+        .session(session);
+
+      if (existingVehicleDoc) {
+        const ownerUserId = (existingVehicleDoc.userId as any)?._id;
+        const ownerStatus = (existingVehicleDoc.userId as any)?.deletionState
+          ?.status;
+
+        if (String(ownerUserId) !== String(id) && ownerStatus !== "DELETED") {
+          throw new Error("Vehicle already registered");
+        }
+
+        if (String(ownerUserId) !== String(id) && ownerStatus === "DELETED") {
+          await userInfoModel.updateOne(
+            { "vehicle.vehicleRegistration": reg },
+            { $pull: { vehicle: { vehicleRegistration: reg } } },
+            { session },
+          );
+        }
       }
-    }
 
-    // === UPSERT USER INFO ===
-    let userInfo = await userInfoModel.findOneAndUpdate(
-      { userId: id },
-      { $setOnInsert: { userId: id, modelUseCount: 0 } },
-      { new: true, upsert: true },
-    );
-
-    const MAX_VEHICLES = parseInt(process.env.MAX_VEHICLES_PER_USER || "3");
-    if (userInfo.vehicle && userInfo.vehicle.length >= MAX_VEHICLES) {
-      return BADREQUEST(
-        res,
-        `Maximum ${MAX_VEHICLES} vehicles allowed per account`,
+      let userInfo = await userInfoModel.findOneAndUpdate(
+        { userId: id },
+        { $setOnInsert: { userId: id, modelUseCount: 0 } },
+        { new: true, upsert: true, session },
       );
-    }
 
-    // === REFERRAL LOGIC (FIRST USE ONLY) ===
-    if (userInfo.modelUseCount === 0 && referralCode) {
-      const referringUser = await userModel.findOne({
-        referralCode: referralCode.trim().toUpperCase(),
-      });
+      if (!userInfo) {
+        throw new Error("Failed to initialize user info");
+      }
 
-      if (referringUser) {
-        const platformSettings =
-          (await PlatformSettingModel.findOne({})) || (0 as any);
-        if (platformSettings) {
-          const referralCount = await successfulReferralModel.countDocuments({
-            referredBy: referringUser._id,
-          });
+      const alreadyExistsForUser = userInfo.vehicle?.some(
+        (v: any) => v.vehicleRegistration === reg,
+      );
 
-          if (referralCount < platformSettings?.maxReferralAllowed) {
-            await successfulReferralModel.create({
-              referredBy: referringUser._id,
-              referredTo: id,
-              rewardEarned: platformSettings.rewardPerReferral,
-            });
+      if (alreadyExistsForUser) {
+        throw new Error("Vehicle already added to your account");
+      }
 
-            await userModel.updateOne(
-              { _id: referringUser._id },
-              {
-                $inc: {
-                  coinEarned: platformSettings.rewardPerReferral,
-                },
-              },
-            );
+      const MAX_VEHICLES = parseInt(
+        process.env.MAX_VEHICLES_PER_USER || "3",
+        10,
+      );
+      if ((userInfo.vehicle?.length || 0) >= MAX_VEHICLES) {
+        throw new Error(`Maximum ${MAX_VEHICLES} vehicles allowed per account`);
+      }
+
+      if (userInfo.modelUseCount === 0 && referralCode) {
+        const referringUser = await userModel
+          .findOne({
+            referralCode: String(referralCode).trim().toUpperCase(),
+          })
+          .session(session);
+
+        if (referringUser) {
+          if (String(referringUser._id) === String(id)) {
+            throw new Error("You can't use your own referral code");
+          }
+
+          const platformSettings = await PlatformSettingModel.findOne(
+            {},
+          ).session(session);
+
+          if (platformSettings) {
+            const alreadyRewarded = await successfulReferralModel
+              .findOne({
+                referredTo: id,
+              })
+              .session(session);
+
+            if (!alreadyRewarded) {
+              const referralCount = await successfulReferralModel
+                .countDocuments({
+                  referredBy: referringUser._id,
+                })
+                .session(session);
+
+              if (referralCount < platformSettings.maxReferralAllowed) {
+                await successfulReferralModel.create(
+                  [
+                    {
+                      referredBy: referringUser._id,
+                      referredTo: id,
+                      rewardEarned: platformSettings.rewardPerReferral,
+                    },
+                  ],
+                  { session },
+                );
+
+                await userModel.updateOne(
+                  { _id: referringUser._id },
+                  { $inc: { coinEarned: platformSettings.rewardPerReferral } },
+                  { session },
+                );
+              }
+            }
           }
         }
       }
-    }
 
-    // === ATOMIC USER INFO UPDATE ===
-    await userInfoModel.updateOne(
-      { userId: id },
-      {
-        $set: {
-          emergencyContact: emergencyContact || userInfo.emergencyContact,
-        },
-        $push: {
-          vehicle: {
-            wheelType,
-            vehicleRegistration: reg,
-            isVerified: true,
+      const now = new Date();
+
+      await userInfoModel.updateOne(
+        { userId: id },
+        {
+          $set: {
+            emergencyContact:
+              emergencyContact !== undefined
+                ? emergencyContact
+                : userInfo.emergencyContact,
           },
+          $push: {
+            vehicle: {
+              wheelType: normalizedWheelType,
+              vehicleRegistration: reg,
+              isVerified: true,
+              createdAt: now,
+            },
+          },
+          $inc: { modelUseCount: 1 },
         },
-        $inc: { modelUseCount: 1 },
-      },
-    );
+        { session },
+      );
 
-    // Fire-and-forget
-    userActivityModel.create({
-      userId: id,
-      type: "VEHICLE_ADDED",
-      title: "You have added a new vehicle",
+      await userActivityModel.create(
+        [
+          {
+            userId: id,
+            type: "VEHICLE_ADDED",
+            title: "You have added a new vehicle",
+            registrationNumber: reg,
+          },
+        ],
+        { session },
+      );
+
+      updatedUserInfo = await userInfoModel
+        .findOne({ userId: id })
+        .session(session);
     });
 
-    return OK(res, userInfo);
+    return OK(res, updatedUserInfo);
   } catch (e: any) {
     console.error(e);
+    if (e?.code === 11000) return BADREQUEST(res, "Vehicle already registered");
     if (e?.message) return BADREQUEST(res, e.message);
     return INTERNAL_SERVER_ERROR(res);
+  } finally {
+    await session.endSession();
   }
 };
 
 export const deleteVehicle = async (req: Request, res: Response) => {
   try {
-    const { id: vehicleId } = req.query;
+    const vehicleId = String(req.query.id || "");
     const { userId } = req.user as any;
+
+    if (!vehicleId) {
+      return BADREQUEST(res, "Vehicle ID is required");
+    }
+
+    if (!mongoose.isObjectIdOrHexString(vehicleId)) {
+      return BADREQUEST(res, "Invalid vehicle ID");
+    }
 
     const updateResult = await userInfoModel.updateOne(
       { userId },
-      {
-        $pull: {
-          vehicle: { _id: vehicleId },
-        },
-      },
+      { $pull: { vehicle: { _id: vehicleId } } },
     );
 
     if (updateResult.modifiedCount === 0) {
@@ -214,7 +304,7 @@ export const deleteVehicle = async (req: Request, res: Response) => {
     }
 
     await userActivityModel.create({
-      userId: userId,
+      userId,
       type: "VEHICLE_REMOVED",
       title: "You have removed a vehicle.",
     });
@@ -232,32 +322,56 @@ export const searchVehicle = async (req: Request, res: Response) => {
     const { vehicleRegistration } = req.body;
     const { userId } = req.user as any;
 
-    await userActivityModel.create({
-      userId,
-      type: "VEHICLE_SEARCHED",
-      title: `You have searched ${vehicleRegistration}`,
-      registrationNumber: vehicleRegistration,
-    });
+    const reg = normalizeRegistration(vehicleRegistration);
+    if (!reg) {
+      return BADREQUEST(res, "Vehicle registration is required");
+    }
 
-    const checkData = (await userInfoModel
-      .findOne({
+    const candidateOwners = (await userInfoModel
+      .find({
         userId: { $ne: userId },
-        vehicle: { $elemMatch: { vehicleRegistration } },
+        vehicle: { $elemMatch: { vehicleRegistration: reg } },
       })
       .populate("userId")
-      .lean()) as any;
+      .lean()) as any[];
 
-    if (!checkData) return BADREQUEST(res, "Vehicle not found");
-
-    const ownerDeletionStatus = (checkData.userId as any)?.deletionState
-      ?.status;
-    if (
-      ownerDeletionStatus === "PENDING_DELETION" ||
-      ownerDeletionStatus === "DELETED"
-    ) {
+    if (!candidateOwners.length) {
       return BADREQUEST(res, "Vehicle not found");
     }
 
+    const validOwners = candidateOwners.filter((doc: any) => {
+      const ownerStatus = doc?.userId?.deletionState?.status;
+      return ownerStatus !== "PENDING_DELETION" && ownerStatus !== "DELETED";
+    });
+
+    if (!validOwners.length) {
+      return BADREQUEST(res, "Vehicle not found");
+    }
+
+    const resolvedOwner = validOwners
+      .map((doc: any) => {
+        const matchingVehicle = (doc.vehicle || [])
+          .filter((v: any) => v.vehicleRegistration === reg)
+          .sort(
+            (a: any, b: any) =>
+              new Date(b.createdAt || 0).getTime() -
+              new Date(a.createdAt || 0).getTime(),
+          )[0];
+
+        return { doc, matchingVehicle };
+      })
+      .filter((x: any) => x.matchingVehicle)
+      .sort(
+        (a: any, b: any) =>
+          new Date(b.matchingVehicle.createdAt || 0).getTime() -
+          new Date(a.matchingVehicle.createdAt || 0).getTime(),
+      )[0];
+
+    if (!resolvedOwner) {
+      return BADREQUEST(res, "Vehicle not found");
+    }
+
+    const checkData = resolvedOwner.doc;
     const { fullName, image, _id, blockedUsers } = checkData.userId as any;
 
     const receiverSettings = await userSettingsModel.findOne({ userId: _id });
@@ -265,39 +379,41 @@ export const searchVehicle = async (req: Request, res: Response) => {
       return BADREQUEST(res, "Vehicle not found");
     }
 
-    // Check if owner has blocked the searcher
     const isBlocked =
       blockedUsers?.some(
-        (id: mongoose.Types.ObjectId) => String(id) === String(userId),
+        (blockedId: mongoose.Types.ObjectId) =>
+          String(blockedId) === String(userId),
       ) ?? false;
 
-    // Notifications
+    if (isBlocked) {
+      return BADREQUEST(res, "Vehicle not found");
+    }
+
+    await userActivityModel.create({
+      userId,
+      type: "VEHICLE_SEARCHED",
+      title: `You have searched ${reg}`,
+      registrationNumber: reg,
+    });
+
     const language = receiverSettings?.preferredLanguage || "en";
-    const translation = getTranslation(
-      "VEHICLE_SEARCHED",
-      language,
-      vehicleRegistration,
-    );
-    const englishTranslation = getTranslation(
-      "VEHICLE_SEARCHED",
-      "en",
-      vehicleRegistration,
-    );
+    const translation = getTranslation("VEHICLE_SEARCHED", language, reg);
+    const englishTranslation = getTranslation("VEHICLE_SEARCHED", "en", reg);
 
     await NotificationModel.create({
       userId: _id,
       type: "VEHICLE_SEARCHED",
       title: englishTranslation.title,
       body: englishTranslation.body,
-      registrationNumber: vehicleRegistration,
+      registrationNumber: reg,
     });
 
     if (
-      checkData?.userId?.fcmToken.length &&
+      checkData?.userId?.fcmToken?.length &&
       receiverSettings?.notifications !== false
     ) {
       NotificationService(
-        checkData?.userId?.fcmToken,
+        checkData.userId.fcmToken,
         "VEHICLE_SEARCHED",
         null,
         translation.title,
@@ -306,14 +422,15 @@ export const searchVehicle = async (req: Request, res: Response) => {
       );
     }
 
-    // Rate limit config
-    const DAILY_CALL_LIMIT = parseInt(process.env.DAILY_CALL_LIMIT || "2");
-    const DAILY_ALERT_LIMIT = parseInt(process.env.DAILY_ALERT_LIMIT || "3");
-    const RESET_HOUR = parseInt(process.env.CALL_LIMIT_RESET_HOUR || "1");
+    const DAILY_CALL_LIMIT = parseInt(process.env.DAILY_CALL_LIMIT || "2", 10);
+    const DAILY_ALERT_LIMIT = parseInt(
+      process.env.DAILY_ALERT_LIMIT || "3",
+      10,
+    );
+    const RESET_HOUR = parseInt(process.env.CALL_LIMIT_RESET_HOUR || "1", 10);
 
     const nowIST = dayjs().tz("Asia/Kolkata");
 
-    // Call window — resets at RESET_HOUR (e.g. 1 AM IST)
     let windowStart = nowIST
       .hour(RESET_HOUR)
       .minute(0)
@@ -325,10 +442,8 @@ export const searchVehicle = async (req: Request, res: Response) => {
     let nextReset = nowIST.hour(RESET_HOUR).minute(0).second(0).millisecond(0);
     if (nowIST.hour() >= RESET_HOUR) nextReset = nextReset.add(1, "day");
 
-    // Alert window — resets at midnight IST
     const alertWindowStart = nowIST.startOf("day").toDate();
 
-    // Fetch both limits in parallel
     const [callsInWindow, alertsSentToday] = await Promise.all([
       callModel.countDocuments({
         callerId: userId,
@@ -348,7 +463,7 @@ export const searchVehicle = async (req: Request, res: Response) => {
       fullName,
       image,
       userId: _id,
-      isBlocked,
+      isBlocked: false,
       callLimit: {
         limit: DAILY_CALL_LIMIT,
         used: callsInWindow,
@@ -373,43 +488,81 @@ export const initiateAlert = async (req: Request, res: Response) => {
     const { userId } = req.user as any;
     const { priorityHigh, receiverId } = req.body;
 
-    const receiverData = (await userModel
-      .findById(receiverId)
-      .select("fcmToken")
-      .lean()) as any;
+    if (!receiverId) {
+      return BADREQUEST(res, "Receiver ID is required");
+    }
 
-    if (!receiverData) {
+    if (String(receiverId) === String(userId)) {
+      return BADREQUEST(res, "You cannot alert yourself");
+    }
+
+    const receiverUser = (await userModel.findById(receiverId).lean()) as any;
+    if (!receiverUser) {
       return BADREQUEST(res, "Receiver not found");
     }
 
-    // Get receiver's language preference
+    if (
+      receiverUser?.deletionState?.status === "PENDING_DELETION" ||
+      receiverUser?.deletionState?.status === "DELETED" ||
+      receiverUser?.isActive === false
+    ) {
+      return BADREQUEST(res, "Receiver not found");
+    }
+
     const receiverSettings = await userSettingsModel.findOne({
       userId: receiverId,
     });
-    const language = receiverSettings?.preferredLanguage || "en";
+    if (receiverSettings?.profileVisibility === false) {
+      return BADREQUEST(res, "Receiver not found");
+    }
 
-    // Get translation for FCM
+    const isBlocked =
+      receiverUser?.blockedUsers?.some(
+        (blockedId: mongoose.Types.ObjectId) =>
+          String(blockedId) === String(userId),
+      ) ?? false;
+
+    if (isBlocked) {
+      return BADREQUEST(res, "Receiver not found");
+    }
+
+    const nowIST = dayjs().tz("Asia/Kolkata");
+    const alertWindowStart = nowIST.startOf("day").toDate();
+    const DAILY_ALERT_LIMIT = parseInt(
+      process.env.DAILY_ALERT_LIMIT || "3",
+      10,
+    );
+
+    const alertsSentToday = await NotificationModel.countDocuments({
+      senderId: userId,
+      userId: receiverId,
+      type: { $in: ["ALERT_HIGH", "ALERT_LOW"] },
+      createdAt: { $gte: alertWindowStart },
+    });
+
+    if (alertsSentToday >= DAILY_ALERT_LIMIT) {
+      return TOO_MANY_REQUESTS(res, "Daily alert limit reached");
+    }
+
+    const language = receiverSettings?.preferredLanguage || "en";
     const notificationType = priorityHigh ? "ALERT_HIGH" : "ALERT_LOW";
     const translation = getTranslation(notificationType, language);
-
-    // ✅ ALWAYS store in English in database
     const englishTranslation = getTranslation(notificationType, "en");
 
     await NotificationModel.create({
-      userId: receiverData?._id,
+      userId: receiverId,
       type: notificationType,
-      title: englishTranslation.title, // ← Always English
-      body: englishTranslation.body, // ← Always English
+      title: englishTranslation.title,
+      body: englishTranslation.body,
       senderId: userId,
     });
 
-    // Send FCM in user's preferred language
     if (
-      receiverData?.fcmToken?.length &&
+      receiverUser?.fcmToken?.length &&
       receiverSettings?.notifications !== false
     ) {
       NotificationService(
-        receiverData?.fcmToken,
+        receiverUser.fcmToken,
         notificationType,
         null,
         translation.title,
@@ -442,14 +595,13 @@ export const initiateCall = async (req: Request, res: Response) => {
 
 export const updateCallStatus = async (req: Request, res: Response) => {
   try {
-    console.log("🔍 Full query:", req.query);
-    console.log("🔍 Full body:", req.body);
     const { userId } = req.user as any;
+
     const {
       receiverId,
       callId,
       status = "INITIATED",
-      registrationNumber = null, // ✅ moved here
+      registrationNumber = null,
     } = req.query as {
       receiverId?: string;
       callId?: string;
@@ -457,17 +609,63 @@ export const updateCallStatus = async (req: Request, res: Response) => {
       registrationNumber?: string;
     };
 
-    if (status == "INITIATED" && receiverId) {
+    const normalizedRegistration =
+      typeof registrationNumber === "string"
+        ? registrationNumber.trim().toUpperCase()
+        : null;
+
+    if (status === "INITIATED") {
+      if (!receiverId) {
+        return BADREQUEST(res, "Receiver ID is required");
+      }
+
+      if (String(receiverId) === String(userId)) {
+        return BADREQUEST(res, "You cannot call yourself");
+      }
+
+      const receiverUser = (await userModel.findById(receiverId).lean()) as any;
+      if (!receiverUser) {
+        return BADREQUEST(res, "Receiver not found");
+      }
+
+      if (
+        receiverUser?.deletionState?.status === "PENDING_DELETION" ||
+        receiverUser?.deletionState?.status === "DELETED" ||
+        receiverUser?.isActive === false
+      ) {
+        return BADREQUEST(res, "Receiver not found");
+      }
+
+      const receiverSettings = await userSettingsModel.findOne({
+        userId: receiverId,
+      });
+      if (receiverSettings?.profileVisibility === false) {
+        return BADREQUEST(res, "Receiver not found");
+      }
+
+      const isBlocked =
+        receiverUser?.blockedUsers?.some(
+          (blockedId: mongoose.Types.ObjectId) =>
+            String(blockedId) === String(userId),
+        ) ?? false;
+
+      if (isBlocked) {
+        return BADREQUEST(res, "Receiver not found");
+      }
+
       const newCall = await callModel.create({
         callId: uuidv4(),
         callerId: userId,
-        receiverId: receiverId,
+        receiverId,
         status: "INITIATED",
-        registrationNumber: registrationNumber ?? null,
+        registrationNumber: normalizedRegistration,
       });
-      console.log("💾 Saved plate:", newCall.registrationNumber);
 
       return OK(res, { callId: newCall.callId });
+    }
+
+    if (!callId) {
+      return BADREQUEST(res, "Call ID is required");
     }
 
     const callData = await callModel.findOne({ callId });
@@ -476,7 +674,18 @@ export const updateCallStatus = async (req: Request, res: Response) => {
       return BADREQUEST(res, "Call not found");
     }
 
+    if (
+      String(callData.callerId) !== String(userId) &&
+      String(callData.receiverId) !== String(userId)
+    ) {
+      return BADREQUEST(res, "Unauthorized call update");
+    }
+
     if (status === "ANSWERED") {
+      if (callData.status !== "INITIATED" && callData.status !== "RINGING") {
+        return BADREQUEST(res, "Invalid call state transition");
+      }
+
       await callModel.updateOne(
         { callId },
         {
@@ -486,23 +695,25 @@ export const updateCallStatus = async (req: Request, res: Response) => {
         },
       );
 
-      userActivityModel.create({
-        userId: userId,
+      await userActivityModel.create({
+        userId,
         type: "CALL",
         title: "Calling activity recorded",
       });
 
-      userActivityModel.create({
+      await userActivityModel.create({
         userId: callData.receiverId,
         type: "RECEIVED_CALL",
         title: "Calling activity recorded",
       });
     } else if (status === "ENDED") {
-      const call = (await callModel.findOne({ callId })) as any;
+      if (callData.status !== "ANSWERED") {
+        return BADREQUEST(res, "Invalid call state transition");
+      }
 
       const endedAt = new Date();
-      const duration = call.startedAt
-        ? Math.floor((endedAt.getTime() - call.startedAt.getTime()) / 1000)
+      const duration = callData.startedAt
+        ? Math.floor((endedAt.getTime() - callData.startedAt.getTime()) / 1000)
         : 0;
 
       await callModel.updateOne(
@@ -514,6 +725,10 @@ export const updateCallStatus = async (req: Request, res: Response) => {
         },
       );
     } else if (status === "FAILED") {
+      if (["ENDED", "FAILED", "MISSED"].includes(callData.status)) {
+        return BADREQUEST(res, "Invalid call state transition");
+      }
+
       await callModel.updateOne(
         { callId },
         {
@@ -523,40 +738,39 @@ export const updateCallStatus = async (req: Request, res: Response) => {
         },
       );
 
-      userActivityModel.create({
-        userId: userId,
+      await userActivityModel.create({
+        userId,
         type: "FAILED_CALL",
         title: "Calling activity recorded",
       });
 
-      const userData = await userModel
-        .findById(callData.receiverId)
-        .select("fcmToken");
-
-      if (!userData) {
-        return BADREQUEST(res, "Receiver not found");
-      }
-
-      // Get receiver's language preference
       const receiverSettings = await userSettingsModel.findOne({
-        userId: callData?.receiverId,
+        userId: callData.receiverId,
       });
       const language = receiverSettings?.preferredLanguage || "en";
 
-      // Get translation for FCM
-      const translation = getTranslation("CALL", language);
+      const userData = (await userModel
+        .findById(callData.receiverId)
+        .select("fcmToken")
+        .lean()) as any;
 
-      // Send FCM in user's preferred language
-      NotificationService(
-        userData?.fcmToken,
-        "CALL",
-        null,
-        translation.title,
-        translation.body,
-        language,
-      );
+      if (
+        userData?.fcmToken?.length &&
+        receiverSettings?.notifications !== false
+      ) {
+        const translation = getTranslation("CALL", language);
+
+        NotificationService(
+          userData.fcmToken,
+          "CALL",
+          null,
+          translation.title,
+          translation.body,
+          language,
+        );
+      }
     } else {
-      throw new Error("Invalid call status");
+      return BADREQUEST(res, "Invalid call status");
     }
 
     return OK(res, {});
@@ -573,9 +787,14 @@ export const getCallRecords = async (req: Request, res: Response) => {
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
     let { page = 1, limit = 20, direction } = req.query;
+    const { pageNum, limitNum } = normalizePagination(page, limit);
 
-    const pageNum = Math.max(1, Number(page));
-    const limitNum = Math.min(50, Math.max(1, Number(limit)));
+    if (
+      direction !== undefined &&
+      !["incoming", "outgoing"].includes(String(direction))
+    ) {
+      return BADREQUEST(res, "Invalid direction");
+    }
 
     const baseFilter: any = {
       $or: [{ callerId: userObjectId }, { receiverId: userObjectId }],
@@ -599,20 +818,15 @@ export const getCallRecords = async (req: Request, res: Response) => {
         .populate("callerId", "fullName")
         .populate("receiverId", "fullName")
         .lean(),
-
       callModel.countDocuments(baseFilter),
-
-      // ✅ returns UUID strings — matches call.callId field
       reportModel.distinct("callId", { reportedBy: userId }),
     ]);
 
-    // ✅ Set of UUID strings, compared against call.callId (not call._id)
     const reportedSet = new Set(reportedCallIds.map(String));
 
     const records = calls.map((call: any) => {
       const isOutgoing = call.callerId?._id?.toString() === userId.toString();
       const plateNumber = call.registrationNumber ?? null;
-
       const otherParty = isOutgoing ? call.receiverId : call.callerId;
       const otherName: string = otherParty?.fullName || "Unknown";
       const initials = otherName
@@ -621,9 +835,6 @@ export const getCallRecords = async (req: Request, res: Response) => {
         .slice(0, 2)
         .map((w: string) => w[0]?.toUpperCase() ?? "")
         .join("");
-
-      // ✅ compare UUID string to UUID string
-      const alreadyReported = reportedSet.has(call.callId);
 
       return {
         _id: call._id,
@@ -637,8 +848,8 @@ export const getCallRecords = async (req: Request, res: Response) => {
         durationInSeconds: call.durationInSeconds || 0,
         status: call.status,
         createdAt: call.createdAt,
-        canReport: !isOutgoing, // only incoming calls — receiver reports caller
-        reported: alreadyReported,
+        canReport: !isOutgoing,
+        reported: reportedSet.has(call.callId),
       };
     });
 
@@ -662,7 +873,6 @@ export const reportCall = async (req: Request, res: Response) => {
     const { userId } = req.user as any;
     const { callId, reason, additionalText, customReason } = req.body;
 
-    // ✅ accept both field names from frontend
     const extraText: string | null =
       (additionalText || customReason)?.trim() || null;
 
@@ -671,7 +881,6 @@ export const reportCall = async (req: Request, res: Response) => {
       return BADREQUEST(res, "Invalid report reason");
     }
 
-    // ✅ find by UUID callId field
     const callData = await callModel.findOne({ callId });
     if (!callData) {
       return BADREQUEST(res, "Call not found");
@@ -681,15 +890,16 @@ export const reportCall = async (req: Request, res: Response) => {
       return BADREQUEST(res, "Only the call receiver can report this call");
     }
 
-    const callerId = callData.callerId;
+    if (!["ANSWERED", "ENDED", "FAILED"].includes(callData.status)) {
+      return BADREQUEST(res, "Call cannot be reported yet");
+    }
 
-    // duplicate check — uses same UUID callId, consistent
     const existingReport = await reportModel.findOne({
       reportedBy: userId,
       callId,
     });
+
     if (existingReport) {
-      // ✅ 409 so frontend can show "already reported" state
       return res
         .status(409)
         .json({ success: false, message: "Already reported" });
@@ -697,15 +907,15 @@ export const reportCall = async (req: Request, res: Response) => {
 
     await reportModel.create({
       reportedBy: userId,
-      reportedUser: callerId,
-      callId, // UUID string
+      reportedUser: callData.callerId,
+      callId,
       reason,
-      additionalText: extraText, // ✅ unified, trimmed
+      additionalText: extraText,
     });
 
     await userModel.updateOne(
-      { _id: userId, blockedUsers: { $ne: callerId } },
-      { $push: { blockedUsers: callerId } },
+      { _id: userId, blockedUsers: { $ne: callData.callerId } },
+      { $push: { blockedUsers: callData.callerId } },
     );
 
     await userActivityModel.create({
@@ -713,6 +923,10 @@ export const reportCall = async (req: Request, res: Response) => {
       type: "CALL",
       title: `Reported and blocked a caller`,
     });
+
+    // Optional future enhancement:
+    // const totalReports = await reportModel.countDocuments({ reportedUser: callData.callerId });
+    // if (totalReports >= SOME_THRESHOLD) { ... deactivate user ... }
 
     return OK(res, { message: "Caller has been blocked and report submitted" });
   } catch (e: any) {
@@ -738,49 +952,59 @@ export const userHome = async (req: Request, res: Response) => {
 
     if (!userData) return BADREQUEST(res, "User not found");
 
-    const [
-      unreadNotifications,
-      vehicleSearched,
-      timesContacted,
-      vehicleInfo,
-      recentCalls,
-    ] = await Promise.all([
-      NotificationModel.countDocuments({ userId, isRead: false }),
+    const vehicleInfo = (await userInfoModel.findOne({ userId }).lean()) as any;
+    const vehicles = vehicleInfo?.vehicle || [];
+    const registrations = vehicles.map((v: any) => v.vehicleRegistration);
 
-      userActivityModel.countDocuments({ userId, type: "VEHICLE_SEARCHED" }),
-
-      userActivityModel.countDocuments({ userId, type: "RECEIVED_CALL" }),
-
-      userInfoModel.findOne({ userId }).lean(),
-
-      // ── Latest 3 ANSWERED/ENDED calls (outgoing OR incoming) ──
-      callModel
-        .find({
-          $or: [{ callerId: userObjectId }, { receiverId: userObjectId }],
-          status: { $in: ["ANSWERED", "ENDED"] },
-        })
-        .sort({ createdAt: -1 })
-        .limit(3)
-        .populate("callerId", "fullName")
-        .populate("receiverId", "fullName")
-        .lean(),
-    ]);
-
-    console.log("🕐 Most recent call createdAt check:");
-    const checkCall = (await callModel
-      .findOne({ receiverId: userObjectId })
-      .sort({ createdAt: -1 })
-      .lean()) as any;
-    console.log(
-      "Latest call:",
-      checkCall?.createdAt,
-      "| plate:",
-      checkCall?.registrationNumber,
-      "| status:",
-      checkCall?.status,
+    const vehicleCreatedMap = new Map(
+      vehicles.map((v: any) => [
+        v.vehicleRegistration,
+        new Date(v.createdAt || 0),
+      ]),
     );
 
-    // ── Shape each recent call for the home screen ──
+    const [unreadNotifications, recentCalls, timesContactedRaw, searchDocs] =
+      await Promise.all([
+        NotificationModel.countDocuments({ userId, isRead: false }),
+
+        callModel
+          .find({
+            $or: [{ callerId: userObjectId }, { receiverId: userObjectId }],
+            status: { $in: ["ANSWERED", "ENDED"] },
+          })
+          .sort({ createdAt: -1 })
+          .limit(3)
+          .populate("callerId", "fullName")
+          .populate("receiverId", "fullName")
+          .lean(),
+
+        callModel.countDocuments({
+          receiverId: userObjectId,
+          status: {
+            $in: ["INITIATED", "ANSWERED", "ENDED", "FAILED", "MISSED"],
+          },
+        }),
+
+        registrations.length
+          ? userActivityModel
+              .find({
+                userId: { $ne: userId },
+                type: "VEHICLE_SEARCHED",
+                registrationNumber: { $in: registrations },
+              })
+              .lean()
+          : [],
+      ]);
+
+    const vehicleSearched = searchDocs.filter((doc: any) => {
+      const vehicleCreatedMap = new Map<string, Date>(
+        vehicles.map((v: any) => [
+          String(v.vehicleRegistration),
+          new Date(v.createdAt || 0),
+        ]),
+      );
+    }).length;
+
     const recentCallRecords = recentCalls.map((call: any) => {
       const isOutgoing = call.callerId?._id?.toString() === userId.toString();
       const otherParty = isOutgoing ? call.receiverId : call.callerId;
@@ -809,17 +1033,23 @@ export const userHome = async (req: Request, res: Response) => {
     return OK(res, {
       ...userData,
       vehicleSearched,
-      timesContacted,
-      vehicleRegistered: vehicleInfo?.vehicle.length || 0,
+      timesContacted: timesContactedRaw,
+      vehicleRegistered: vehicles.length || 0,
       memberSince: userData?.createdAt || null,
       unreadNotifications,
-      recentCalls: recentCallRecords, // ✅ new
+      recentCalls: recentCallRecords,
     });
   } catch (e: any) {
     console.error(e);
     if (e?.message) return BADREQUEST(res, e.message);
     return INTERNAL_SERVER_ERROR(res);
   }
+};
+
+const normalizePagination = (page: any, limit: any) => {
+  const pageNum = Math.max(1, Number(page) || 1);
+  const limitNum = Math.min(50, Math.max(1, Number(limit) || 20));
+  return { pageNum, limitNum };
 };
 
 export const userActivity = async (req: Request, res: Response) => {
@@ -833,31 +1063,19 @@ export const userActivity = async (req: Request, res: Response) => {
       return BADREQUEST(res, "Invalid activity type");
     }
 
-    const pageNum = Number(page);
-    const limitNum = Number(limit);
+    const { pageNum, limitNum } = normalizePagination(page, limit);
 
-    let activity = [];
-    let totalData = 0;
+    const query = type === "ALL" ? { userId } : { userId, type };
 
-    if (type === "ALL") {
-      activity = await userActivityModel
-        .find({ userId })
+    const [activity, totalData] = await Promise.all([
+      userActivityModel
+        .find(query)
         .sort({ createdAt: -1 })
         .skip((pageNum - 1) * limitNum)
         .limit(limitNum)
-        .lean();
-
-      totalData = await userActivityModel.countDocuments({ userId });
-    } else {
-      activity = await userActivityModel
-        .find({ userId, type })
-        .sort({ createdAt: -1 })
-        .skip((pageNum - 1) * limitNum)
-        .limit(limitNum)
-        .lean();
-
-      totalData = await userActivityModel.countDocuments({ userId, type });
-    }
+        .lean(),
+      userActivityModel.countDocuments(query),
+    ]);
 
     return OK(res, {
       activity,
@@ -877,6 +1095,23 @@ export const userActivity = async (req: Request, res: Response) => {
 export const getUserSettings = async (req: Request, res: Response) => {
   try {
     const { userId } = req.user as any;
+
+    const user = (await userModel
+      .findById(userId)
+      .select("isActive deletionState")
+      .lean()) as any;
+
+    if (!user) {
+      return BADREQUEST(res, "User not found");
+    }
+
+    if (
+      user.isActive === false ||
+      user?.deletionState?.status === "PENDING_DELETION" ||
+      user?.deletionState?.status === "DELETED"
+    ) {
+      return BADREQUEST(res, "Account is not active");
+    }
 
     const settings = await userSettingsModel.findOne({ userId });
 
@@ -900,13 +1135,29 @@ export const updateUserSettings = async (req: Request, res: Response) => {
       emailAlerts = true,
       smsAlerts = true,
       profileVisibility = true,
-      preferredLanguage = "en", // NEW FIELD
+      preferredLanguage = "en",
     } = req.body as any;
     const { userId } = req.user as any;
 
-    // Validate language
     if (!["en", "hi", "mr"].includes(preferredLanguage)) {
       return BADREQUEST(res, "Invalid language. Supported: en, hi, mr");
+    }
+
+    const user = (await userModel
+      .findById(userId)
+      .select("isActive deletionState")
+      .lean()) as any;
+
+    if (!user) {
+      return BADREQUEST(res, "User not found");
+    }
+
+    if (
+      user.isActive === false ||
+      user?.deletionState?.status === "PENDING_DELETION" ||
+      user?.deletionState?.status === "DELETED"
+    ) {
+      return BADREQUEST(res, "Account is not active");
     }
 
     const settings = await userSettingsModel.findOneAndUpdate(
@@ -936,14 +1187,9 @@ export const logout = async (req: Request, res: Response) => {
     const { userId } = req.user as any;
     const { fcmToken } = req.body as any;
 
-    if (!fcmToken) {
-      return BADREQUEST(res, "FCM Token is required");
+    if (fcmToken) {
+      await userModel.updateOne({ _id: userId }, { $pull: { fcmToken } });
     }
-
-    await userModel.updateOne(
-      { _id: userId },
-      { $pull: { fcmToken: fcmToken } },
-    );
 
     return OK(res, {});
   } catch (e: any) {
@@ -956,6 +1202,22 @@ export const logout = async (req: Request, res: Response) => {
 export const deleteAccount = async (req: Request, res: Response) => {
   try {
     const { userId } = req.user as any;
+
+    const existingUser = (await userModel
+      .findById(userId)
+      .select("deletionState")
+      .lean()) as any;
+
+    if (!existingUser) {
+      return BADREQUEST(res, "User not found");
+    }
+
+    if (existingUser?.deletionState?.status === "PENDING_DELETION") {
+      return OK(res, {
+        message:
+          "Your account is already scheduled for permanent deletion. Log back in to cancel.",
+      });
+    }
 
     await userModel.updateOne(
       { _id: userId },
@@ -995,25 +1257,22 @@ export const getUserNotifications = async (req: Request, res: Response) => {
     const { userId } = req.user as any;
     let { page = 1, limit = 20 } = req.query;
 
-    const pageNum = Number(page);
-    const limitNum = Number(limit);
+    const { pageNum, limitNum } = normalizePagination(page, limit);
 
-    // Fetch user's language preference
     const userSettings = await userSettingsModel.findOne({ userId });
     const userLanguage = userSettings?.preferredLanguage || "en";
 
-    const notifications = await NotificationModel.find({ userId })
-      .sort({ createdAt: -1 })
-      .skip((pageNum - 1) * limitNum)
-      .limit(limitNum)
-      .lean();
+    const [notifications, totalData, unreadNotifications] = await Promise.all([
+      NotificationModel.find({ userId })
+        .sort({ createdAt: -1 })
+        .skip((pageNum - 1) * limitNum)
+        .limit(limitNum)
+        .lean(),
+      NotificationModel.countDocuments({ userId }),
+      NotificationModel.countDocuments({ userId, isRead: false }),
+    ]);
 
-    const totalData = await NotificationModel.countDocuments({ userId });
-    const unreadNotifications =
-      (await NotificationModel.countDocuments({ userId, isRead: false })) || 0;
-
-    // Translate each notification to user's current language (only for response)
-    const translatedNotifications = notifications.map((notification) => {
+    const translatedNotifications = notifications.map((notification: any) => {
       const translation = getTranslation(
         notification.type,
         userLanguage,
@@ -1022,8 +1281,8 @@ export const getUserNotifications = async (req: Request, res: Response) => {
 
       return {
         ...notification,
-        title: translation.title, // Translated for response only
-        body: translation.body, // Translated for response only
+        title: translation.title,
+        body: translation.body,
       };
     });
 
@@ -1049,68 +1308,79 @@ export const readNotifications = async (req: Request, res: Response) => {
     const { notificationId } = req.body as any;
     const { userId } = req.user as any;
 
-    let notifications;
-    if (notificationId) {
-      notifications = await NotificationModel.findOneAndUpdate(
-        { _id: notificationId },
-        { $set: { isRead: true } },
-        { new: true },
-      );
-
-      if (
-        notifications?.type === "ALERT_HIGH" ||
-        notifications?.type === "ALERT_LOW"
-      ) {
-        // Get sender's language preference
-        const senderSettings = await userSettingsModel.findOne({
-          userId: notifications?.senderId,
-        });
-        const language = senderSettings?.preferredLanguage || "en";
-
-        // Get translation for FCM
-        const translation = getTranslation(
-          "ALERT_ACKNOWLEDGED",
-          language,
-          notifications?.registrationNumber,
-        );
-
-        // ✅ ALWAYS store in English in database
-        const englishTranslation = getTranslation(
-          "ALERT_ACKNOWLEDGED",
-          "en",
-          notifications?.registrationNumber,
-        );
-
-        await NotificationModel.create({
-          userId: notifications?.senderId,
-          type: "ALERT_ACKNOWLEDGED",
-          title: englishTranslation.title, // ← Always English
-          body: englishTranslation.body, // ← Always English
-          registrationNumber: notifications?.registrationNumber,
-        });
-
-        const findFCM = (await userModel
-          .findById(notifications?.senderId)
-          .select("fcmToken")
-          .lean()) as any;
-
-        // Send FCM in user's preferred language
-        if (findFCM?.fcmToken?.length) {
-          NotificationService(
-            findFCM?.fcmToken,
-            "ALERT_ACKNOWLEDGED",
-            null,
-            translation.title, // ← User's language for push
-            translation.body, // ← User's language for push
-            language,
-          );
-        }
-      }
-    } else {
-      throw new Error("Notification ID is required");
+    if (!notificationId) {
+      return BADREQUEST(res, "Notification ID is required");
     }
 
-    return OK(res, notifications);
+    const notification = await NotificationModel.findOneAndUpdate(
+      { _id: notificationId, userId, isRead: false },
+      { $set: { isRead: true } },
+      { new: true },
+    );
+
+    if (!notification) {
+      const existingNotification = await NotificationModel.findOne({
+        _id: notificationId,
+        userId,
+      });
+
+      if (!existingNotification) {
+        return BADREQUEST(res, "Notification not found");
+      }
+
+      return OK(res, existingNotification);
+    }
+
+    if (
+      notification.type === "ALERT_HIGH" ||
+      notification.type === "ALERT_LOW"
+    ) {
+      const senderSettings = await userSettingsModel.findOne({
+        userId: notification.senderId,
+      });
+      const language = senderSettings?.preferredLanguage || "en";
+
+      const translation = getTranslation(
+        "ALERT_ACKNOWLEDGED",
+        language,
+        notification.registrationNumber,
+      );
+
+      const englishTranslation = getTranslation(
+        "ALERT_ACKNOWLEDGED",
+        "en",
+        notification.registrationNumber,
+      );
+
+      await NotificationModel.create({
+        userId: notification.senderId,
+        type: "ALERT_ACKNOWLEDGED",
+        title: englishTranslation.title,
+        body: englishTranslation.body,
+        registrationNumber: notification.registrationNumber,
+      });
+
+      const findFCM = (await userModel
+        .findById(notification.senderId)
+        .select("fcmToken")
+        .lean()) as any;
+
+      if (
+        findFCM?.fcmToken?.length &&
+        senderSettings?.notifications !== false
+      ) {
+        NotificationService(
+          findFCM.fcmToken,
+          "ALERT_ACKNOWLEDGED",
+          null,
+          translation.title,
+          translation.body,
+          language,
+        );
+      }
+    }
+
+    return OK(res, notification);
   } catch (e: any) {
     console.error(e);
     if (e?.message) return BADREQUEST(res, e.message);
