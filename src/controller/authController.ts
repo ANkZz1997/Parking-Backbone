@@ -5,6 +5,7 @@ import { deletedEmailModel } from "../models/deleted-email-schema";
 import { BADREQUEST, INTERNAL_SERVER_ERROR, OK } from "../utils/response";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 
 dotenv.config();
 
