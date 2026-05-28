@@ -26,6 +26,20 @@ import mongoose from "mongoose";
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
+const VALID_WHEEL_TYPES = [2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20] as const;
+type WheelType = (typeof VALID_WHEEL_TYPES)[number];
+
+const normalizeRegistration = (value: any): string => {
+  if (typeof value !== "string") return "";
+  return value.trim().toUpperCase();
+};
+
+const normalizePagination = (page: any, limit: any) => {
+  const pageNum = Math.max(1, Number(page) || 1);
+  const limitNum = Math.min(50, Math.max(1, Number(limit) || 20));
+  return { pageNum, limitNum };
+};
+
 // Manage Vehicles *********************************************
 
 export const userData = async (req: Request, res: Response) => {
@@ -115,7 +129,11 @@ export const addUpdateUserInfo = async (req: Request, res: Response) => {
     }
 
     const normalizedWheelType = Number(wheelType);
-    if (!VALID_WHEEL_TYPES.includes(normalizedWheelType as any)) {
+    if (
+      !(VALID_WHEEL_TYPES as ReadonlyArray<number>).includes(
+        normalizedWheelType,
+      )
+    ) {
       return BADREQUEST(res, "Invalid wheel type");
     }
 
@@ -194,25 +212,24 @@ export const addUpdateUserInfo = async (req: Request, res: Response) => {
 
           if (platformSettings) {
             const alreadyRewarded = await successfulReferralModel
-              .findOne({
-                referredTo: id,
-              })
+              .findOne({ referredTo: id })
               .session(session);
 
             if (!alreadyRewarded) {
               const referralCount = await successfulReferralModel
-                .countDocuments({
-                  referredBy: referringUser._id,
-                })
+                .countDocuments({ referredBy: referringUser._id })
                 .session(session);
 
-              if (referralCount < platformSettings.maxReferralAllowed) {
+              const maxAllowed = platformSettings.maxReferralAllowed ?? 0;
+              const reward = platformSettings.rewardPerReferral ?? 0;
+
+              if (referralCount < maxAllowed) {
                 await successfulReferralModel.create(
                   [
                     {
                       referredBy: referringUser._id,
                       referredTo: id,
-                      rewardEarned: platformSettings.rewardPerReferral,
+                      rewardEarned: reward,
                     },
                   ],
                   { session },
@@ -220,7 +237,7 @@ export const addUpdateUserInfo = async (req: Request, res: Response) => {
 
                 await userModel.updateOne(
                   { _id: referringUser._id },
-                  { $inc: { coinEarned: platformSettings.rewardPerReferral } },
+                  { $inc: { coinEarned: reward } },
                   { session },
                 );
               }
@@ -609,11 +626,6 @@ export const updateCallStatus = async (req: Request, res: Response) => {
       registrationNumber?: string;
     };
 
-    const normalizedRegistration =
-      typeof registrationNumber === "string"
-        ? registrationNumber.trim().toUpperCase()
-        : null;
-
     if (status === "INITIATED") {
       if (!receiverId) {
         return BADREQUEST(res, "Receiver ID is required");
@@ -658,7 +670,7 @@ export const updateCallStatus = async (req: Request, res: Response) => {
         callerId: userId,
         receiverId,
         status: "INITIATED",
-        registrationNumber: normalizedRegistration,
+        registrationNumber: normalizeRegistration(registrationNumber) || null,
       });
 
       return OK(res, { callId: newCall.callId });
@@ -1044,12 +1056,6 @@ export const userHome = async (req: Request, res: Response) => {
     if (e?.message) return BADREQUEST(res, e.message);
     return INTERNAL_SERVER_ERROR(res);
   }
-};
-
-const normalizePagination = (page: any, limit: any) => {
-  const pageNum = Math.max(1, Number(page) || 1);
-  const limitNum = Math.min(50, Math.max(1, Number(limit) || 20));
-  return { pageNum, limitNum };
 };
 
 export const userActivity = async (req: Request, res: Response) => {
