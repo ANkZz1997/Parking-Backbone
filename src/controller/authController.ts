@@ -6,6 +6,9 @@ import { BADREQUEST, INTERNAL_SERVER_ERROR, OK } from "../utils/response";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
+import { OAuth2Client } from "google-auth-library";
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_WEB_CLIENT_ID);
 
 dotenv.config();
 
@@ -27,18 +30,36 @@ export const socialLogin = async (req: Request, res: Response) => {
       lastName,
       fullName,
       email,
+      idToken,
       phoneNumber = null,
       fcmToken = "",
       deviceType,
     } = req.body;
 
+    if (!idToken) {
+      throw new Error("Google ID token is required");
+    }
+
     if (!["ANDROID", "IOS", "WEB"].includes(deviceType)) {
       throw new Error("Invalid device type");
     }
 
-    const normalizedEmail = String(email || "")
-      .trim()
-      .toLowerCase();
+    let verifiedEmail: string;
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken,
+        audience: process.env.GOOGLE_WEB_CLIENT_ID,
+      });
+      const payload = ticket.getPayload();
+      if (!payload || !payload.email) {
+        throw new Error("Invalid Google token payload");
+      }
+      verifiedEmail = payload.email.toLowerCase().trim();
+    } catch (err) {
+      throw new Error("Google authentication failed: invalid or expired token");
+    }
+
+    const normalizedEmail = verifiedEmail;
     const normalizedFcmToken =
       typeof fcmToken === "string" ? fcmToken.trim() : "";
 
