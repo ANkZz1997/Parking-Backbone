@@ -59,6 +59,17 @@ export const socialLogin = async (req: Request, res: Response) => {
       throw new Error("Google authentication failed: invalid or expired token");
     }
 
+    const requestEmail = String(email || "")
+      .trim()
+      .toLowerCase();
+
+    if (requestEmail && requestEmail !== verifiedEmail) {
+      console.warn("Google email mismatch", {
+        requestEmail,
+        verifiedEmail,
+      });
+      throw new Error('Email mismatch');
+    }
     const normalizedEmail = verifiedEmail;
     const normalizedFcmToken =
       typeof fcmToken === "string" ? fcmToken.trim() : "";
