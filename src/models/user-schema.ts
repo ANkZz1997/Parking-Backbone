@@ -27,21 +27,26 @@ export interface IUser extends Document {
   coinEarned?: number;
   referralCode?: string;
   blockedUsers?: mongoose.Types.ObjectId[];
+  appleId?: string;                         
+  authProviders?: ('GOOGLE' | 'APPLE')[];
 }
 
 const UserSchema: Schema = new Schema<IUser>(
   {
     firstName: {
       type: String,
-      required: true,
+      required: false,
+      default: 'User',
     },
     lastName: {
       type: String,
-      required: true,
+      required: false,
+      default: '',
     },
     fullName: {
       type: String,
-      required: true,
+      required: false,
+      default: 'User',
     },
     image: {
       type: String,
@@ -49,8 +54,9 @@ const UserSchema: Schema = new Schema<IUser>(
     },
     email: {
       type: String,
-      required: true,
+      required: false,      // ✅ CHANGED — Apple users may not have email
       unique: true,
+      sparse: true,         // ✅ ADD — allows multiple null emails without unique conflict
       lowercase: true,
       trim: true,
     },
@@ -110,6 +116,17 @@ const UserSchema: Schema = new Schema<IUser>(
     referralCode: { type: String },
     blockedUsers: {
       type: [{ type: Schema.Types.ObjectId, ref: "User" }],
+      default: [],
+    },
+    appleId: {
+      type: String,
+      default: null,
+      sparse: true,         // allows null for Google-only users
+      index: true,          // fast lookup by appleId on login
+    },
+    authProviders: {
+      type: [String],
+      enum: ['GOOGLE', 'APPLE'],
       default: [],
     },
   },
