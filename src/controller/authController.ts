@@ -1,26 +1,30 @@
 import { Request, Response } from "express";
-import bcrypt from "bcrypt";
-import { userModel } from "../models/user-schema";
-import { deletedEmailModel } from "../models/deleted-email-schema";
-import { BADREQUEST, INTERNAL_SERVER_ERROR, OK } from "../utils/response";
-import dotenv from "dotenv";
-import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
+import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { OAuth2Client } from "google-auth-library";
 import appleSignin from "apple-signin-auth";
-
-const googleClient = new OAuth2Client(process.env.GOOGLE_WEB_CLIENT_ID);
-
-dotenv.config();
-
-//************************ MAIN CONTROLLER ******************************
-
-import crypto from "crypto";
+import { userModel } from "../models/user-schema";
+import { deletedEmailModel } from "../models/deleted-email-schema";
 import { userInfoModel } from "../models/user-info-schema";
 import { userActivityModel } from "../models/user-activity-schema";
 import { userSettingsModel } from "../models/user-setting-schema";
-import { platform } from "os";
-import { PlatformSettingModel } from "../models/platform-settings-schema";
+import { BADREQUEST, INTERNAL_SERVER_ERROR, OK } from "../utils/response";
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_WEB_CLIENT_ID);
+
+const generateUniqueReferral = async (session: mongoose.ClientSession) => {
+  let code = "";
+  let exists = true;
+
+  while (exists) {
+    code = crypto.randomBytes(4).toString("hex").toUpperCase();
+    const found = await userModel.findOne({ referralCode: code }).session(session);
+    if (!found) exists = false;
+  }
+
+  return code;
+};
 
 export const socialLogin = async (req: Request, res: Response) => {
   const session = await mongoose.startSession();
@@ -37,47 +41,38 @@ export const socialLogin = async (req: Request, res: Response) => {
       deviceType,
     } = req.body;
 
-    if (!idToken) {
-      throw new Error("Google ID token is required");
-    }
-
+    if (!idToken) throw new Error("Google ID token is required");
     if (!["ANDROID", "IOS", "WEB"].includes(deviceType)) {
       throw new Error("Invalid device type");
     }
 
     let verifiedEmail: string;
+    let googleId: string;
+
     try {
       const ticket = await googleClient.verifyIdToken({
         idToken,
         audience: process.env.GOOGLE_WEB_CLIENT_ID,
       });
       const payload = ticket.getPayload();
-      if (!payload || !payload.email) {
+      if (!payload?.email || !payload.sub) {
         throw new Error("Invalid Google token payload");
       }
       verifiedEmail = payload.email.toLowerCase().trim();
-    } catch (err) {
+      googleId = payload.sub;
+    } catch {
       throw new Error("Google authentication failed: invalid or expired token");
     }
 
-    const requestEmail = String(email || "")
-      .trim()
-      .toLowerCase();
-
+    const requestEmail = String(email || "").trim().toLowerCase();
     if (requestEmail && requestEmail !== verifiedEmail) {
-      console.warn("Google email mismatch", {
-        requestEmail,
-        verifiedEmail,
-      });
       throw new Error("Email mismatch");
     }
-    const normalizedEmail = verifiedEmail;
-    const normalizedFcmToken =
-      typeof fcmToken === "string" ? fcmToken.trim() : "";
 
-    if (!normalizedEmail) {
-      throw new Error("Email is required");
-    }
+    const normalizedEmail = verifiedEmail;
+    const normalizedFcmToken = typeof fcmToken === "string" ? fcmToken.trim() : "";
+
+    if (!normalizedEmail) throw new Error("Email is required");
 
     if (deviceType === "ANDROID") {
       if (!firstName || !lastName || !normalizedFcmToken) {
@@ -85,8 +80,7 @@ export const socialLogin = async (req: Request, res: Response) => {
           "For Android: Firstname, Lastname, Email, and FCM-Token are required",
         );
       }
-      fullName =
-        `${String(firstName).trim()} ${String(lastName).trim()}`.trim();
+      fullName = `${String(firstName).trim()} ${String(lastName).trim()}`.trim();
     } else {
       if (deviceType !== "WEB" && !normalizedFcmToken) {
         throw new Error("For iOS: Email and FCM-Token are required");
@@ -100,11 +94,10 @@ export const socialLogin = async (req: Request, res: Response) => {
         "User";
     }
 
-    let user = (await userModel.findOne({ email: normalizedEmail })) as any;
+    let user = (await userModel.findOne({ googleId })) as any;
+    if (!user) user = (await userModel.findOne({ email: normalizedEmail })) as any;
 
-    if (user?.isBlocked) {
-      throw new Error("Your account has been blocked");
-    }
+    if (user?.isBlocked) throw new Error("Your account has been blocked");
 
     if (user?.deletionState?.status === "PENDING_DELETION") {
       await userModel.updateOne(
@@ -119,7 +112,6 @@ export const socialLogin = async (req: Request, res: Response) => {
           },
         },
       );
-
       user = await userModel.findById(user._id);
     }
 
@@ -133,30 +125,14 @@ export const socialLogin = async (req: Request, res: Response) => {
       const tombstoned = await deletedEmailModel.findOne({
         email: normalizedEmail,
       });
-
       if (tombstoned) {
         throw new Error(
           "An account with this email was permanently deleted and cannot be re-registered",
         );
       }
 
-      const generateUniqueReferral = async () => {
-        let code = "";
-        let exists = true;
-
-        while (exists) {
-          code = crypto.randomBytes(4).toString("hex").toUpperCase();
-          const found = await userModel
-            .findOne({ referralCode: code })
-            .session(session);
-          if (!found) exists = false;
-        }
-
-        return code;
-      };
-
       await session.withTransaction(async () => {
-        const referralCode = await generateUniqueReferral();
+        const referralCode = await generateUniqueReferral(session);
 
         const createdUsers = await userModel.create(
           [
@@ -165,6 +141,8 @@ export const socialLogin = async (req: Request, res: Response) => {
               lastName,
               fullName,
               email: normalizedEmail,
+              googleId,
+              authProviders: ["GOOGLE"],
               deviceType,
               fcmToken: normalizedFcmToken ? [normalizedFcmToken] : [],
               phoneNumber,
@@ -194,12 +172,28 @@ export const socialLogin = async (req: Request, res: Response) => {
           { session },
         );
       });
+    } else {
+      await userModel.updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            googleId,
+            email: normalizedEmail,
+            firstName: firstName || user.firstName,
+            lastName: lastName || user.lastName,
+            fullName: fullName || user.fullName,
+            deviceType,
+          },
+          $addToSet: { authProviders: "GOOGLE" },
+        },
+      );
+      user = await userModel.findById(user._id);
     }
 
     if (normalizedFcmToken) {
       await userModel.updateOne(
-        { _id: user._id, fcmToken: { $ne: normalizedFcmToken } },
-        { $push: { fcmToken: normalizedFcmToken } },
+        { _id: user._id },
+        { $addToSet: { fcmToken: normalizedFcmToken } },
       );
       user = await userModel.findById(user._id);
     }
@@ -249,13 +243,12 @@ export const appleSocialLogin = async (req: Request, res: Response) => {
 
   try {
     let {
-      identityToken, // JWT from Apple — always present
-      authorizationCode,
-      fullName, // only sent on FIRST Apple login, null on repeat
-      email, // only sent on FIRST Apple login, null on repeat (hide my email too)
+      identityToken,
+      fullName,
+      email,
       fcmToken = "",
       deviceType,
-      appleUserId, // user field from Apple response — stable unique ID
+      appleUserId,
     } = req.body;
 
     if (!identityToken || !appleUserId) {
@@ -266,70 +259,31 @@ export const appleSocialLogin = async (req: Request, res: Response) => {
       throw new Error("Invalid device type");
     }
 
-    // ── Step 1: Verify Apple JWT ──────────────────────────────────────────
     let applePayload: any;
     try {
       applePayload = await appleSignin.verifyIdToken(identityToken, {
-        audience: process.env.APPLE_BUNDLE_ID, // e.g. com.yourcompany.wayze
+        audience: process.env.APPLE_BUNDLE_ID,
         ignoreExpiration: false,
       });
-    } catch (err) {
+    } catch {
       throw new Error("Apple authentication failed: invalid or expired token");
     }
 
-    // applePayload.sub is the stable Apple User ID — matches appleUserId from client
     if (applePayload.sub !== appleUserId) {
       throw new Error("Apple user ID mismatch");
     }
 
-    const normalizedFcmToken =
-      typeof fcmToken === "string" ? fcmToken.trim() : "";
-
-    // ── Step 2: Resolve email ─────────────────────────────────────────────
-    // Apple only sends email on FIRST login. After that it's null.
-    // applePayload.email may be a relay address (privaterelay.appleid.com)
-    // if user chose "Hide My Email" — that's fine, we store it as-is.
-    const appleEmail = applePayload.email
-      ? applePayload.email.toLowerCase().trim()
-      : null;
-
+    const normalizedFcmToken = typeof fcmToken === "string" ? fcmToken.trim() : "";
+    const appleEmail = applePayload.email ? applePayload.email.toLowerCase().trim() : null;
     const clientEmail = email ? String(email).toLowerCase().trim() : null;
-
-    // Use verified payload email over client-sent email
     const resolvedEmail = appleEmail || clientEmail || null;
 
-    // ── Step 3: Find existing account ────────────────────────────────────
-    // Priority order for account linking:
-    // 1. Match by appleId (returning Apple user)
-    // 2. Match by email (Google user signing in with Apple for first time)
-    // 3. No match → create new account
-
     let user = (await userModel.findOne({ appleId: appleUserId })) as any;
-
     if (!user && resolvedEmail) {
-      // Check if a Google account exists with this email
-      // This is the cross-provider linking scenario
       user = (await userModel.findOne({ email: resolvedEmail })) as any;
-
-      if (user) {
-        // Link Apple to existing Google account
-        await userModel.updateOne(
-          { _id: user._id },
-          {
-            $set: { appleId: appleUserId },
-            $addToSet: { authProviders: "APPLE" },
-          },
-        );
-        user = await userModel.findById(user._id);
-        console.log(
-          `✅ Linked Apple ID to existing Google account: ${resolvedEmail}`,
-        );
-      }
     }
 
-    if (user?.isBlocked) {
-      throw new Error("Your account has been blocked");
-    }
+    if (user?.isBlocked) throw new Error("Your account has been blocked");
 
     if (user?.deletionState?.status === "PENDING_DELETION") {
       await userModel.updateOne(
@@ -353,7 +307,6 @@ export const appleSocialLogin = async (req: Request, res: Response) => {
       );
     }
 
-    // ── Step 4: Create new account if no match found ──────────────────────
     if (!user) {
       if (resolvedEmail) {
         const tombstoned = await deletedEmailModel.findOne({
@@ -366,28 +319,13 @@ export const appleSocialLogin = async (req: Request, res: Response) => {
         }
       }
 
-      // fullName is only available on first Apple login
-      // On repeat logins with "Hide My Email", both email and fullName are null
       const parsedFirst = fullName?.givenName || "User";
       const parsedLast = fullName?.familyName || "";
       const parsedFull =
         [parsedFirst, parsedLast].filter(Boolean).join(" ") || "User";
 
-      const generateUniqueReferral = async () => {
-        let code = "";
-        let exists = true;
-        while (exists) {
-          code = crypto.randomBytes(4).toString("hex").toUpperCase();
-          const found = await userModel
-            .findOne({ referralCode: code })
-            .session(session);
-          if (!found) exists = false;
-        }
-        return code;
-      };
-
       await session.withTransaction(async () => {
-        const referralCode = await generateUniqueReferral();
+        const referralCode = await generateUniqueReferral(session);
 
         const createdUsers = await userModel.create(
           [
@@ -395,8 +333,8 @@ export const appleSocialLogin = async (req: Request, res: Response) => {
               firstName: parsedFirst,
               lastName: parsedLast,
               fullName: parsedFull,
-              email: resolvedEmail, // may be null if "Hide My Email" + repeat login
-              appleId: appleUserId, // ✅ always present and stable
+              email: resolvedEmail || undefined,
+              appleId: appleUserId,
               authProviders: ["APPLE"],
               deviceType,
               fcmToken: normalizedFcmToken ? [normalizedFcmToken] : [],
@@ -427,24 +365,40 @@ export const appleSocialLogin = async (req: Request, res: Response) => {
           { session },
         );
       });
-    }
-
-    // ── Step 5: Update FCM token ──────────────────────────────────────────
-    if (normalizedFcmToken) {
+    } else {
       await userModel.updateOne(
-        { _id: user._id, fcmToken: { $ne: normalizedFcmToken } },
-        { $push: { fcmToken: normalizedFcmToken } },
+        { _id: user._id },
+        {
+          $set: {
+            appleId: appleUserId,
+            ...(resolvedEmail ? { email: resolvedEmail } : {}),
+            firstName: fullName?.givenName || user.firstName,
+            lastName: fullName?.familyName || user.lastName,
+            fullName: fullName
+              ? [fullName?.givenName, fullName?.familyName].filter(Boolean).join(" ")
+              : user.fullName,
+            deviceType,
+          },
+          $addToSet: { authProviders: "APPLE" },
+        },
       );
       user = await userModel.findById(user._id);
     }
 
-    // ── Step 6: Sign JWT and return ───────────────────────────────────────
+    if (normalizedFcmToken) {
+      await userModel.updateOne(
+        { _id: user._id },
+        { $addToSet: { fcmToken: normalizedFcmToken } },
+      );
+      user = await userModel.findById(user._id);
+    }
+
     if (!process.env.JWT_SECRET) {
       throw new Error("JWT configuration missing");
     }
 
     const token = jwt.sign(
-      { userId: user._id.toString(), email: user.email },
+      { userId: user._id.toString(), email: user.email || resolvedEmail || "" },
       process.env.JWT_SECRET,
       { expiresIn: "365d" },
     );
