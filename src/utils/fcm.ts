@@ -43,24 +43,37 @@ export const NotificationService = async (
   referenceId?: any,
   title?: string,
   body?: string,
-  language: SupportedLanguage = "en", // NEW PARAMETER
+  language: SupportedLanguage = "en",
 ) => {
   if (!fcms?.length) return;
 
   const PUSH_BATCH_SIZE = 500;
+  const isCustomAlert = type === "ALERT_HIGH" || type === "ALERT_LOW";
 
-  const payloads = fcms.filter(Boolean).map((token) => ({
-    token,
-    notification: {
-      title: title,
-      body: body,
-    },
-    data: {
-      type,
-      referenceId: referenceId ? JSON.stringify(referenceId) : "",
-      language, // Include language in data payload
-    },
-  }));
+  const payloads = fcms.filter(Boolean).map((token) => {
+    const base = {
+      token,
+      data: {
+        type,
+        title: title || "",
+        body: body || "",
+        referenceId: referenceId ? JSON.stringify(referenceId) : "",
+        language,
+      },
+      android: { priority: "high" as const },
+    };
+
+    // Only ALERT_HIGH/ALERT_LOW skip the notification block —
+    // everything else (VEHICLE_SEARCHED etc.) keeps default system tray behavior
+    if (!isCustomAlert) {
+      return {
+        ...base,
+        notification: { title, body },
+      };
+    }
+
+    return base;
+  });
 
   console.log(
     `🚀 Sending push notifications in ${Math.ceil(
@@ -70,8 +83,6 @@ export const NotificationService = async (
 
   for (let i = 0; i < payloads.length; i += PUSH_BATCH_SIZE) {
     const batch = payloads.slice(i, i + PUSH_BATCH_SIZE);
-
-    // Fire & forget (fast, non-blocking)
     admin
       .messaging()
       .sendEach(batch)

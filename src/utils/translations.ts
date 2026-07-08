@@ -3,8 +3,8 @@ export type SupportedLanguage = "en" | "hi" | "mr";
 
 // Updated interface to support both string and function
 export interface NotificationTranslation {
-  title: string;
-  body: string | ((param: string) => string); // ← Changed this
+  title: string | ((param: string) => string);
+  body: string | ((param: string) => string);
 }
 
 // Translation dictionary
@@ -31,30 +31,36 @@ const translations: Record<
   },
   ALERT_HIGH: {
     en: {
-      title: "High Priority Alert",
-      body: "You have received a high priority alert regarding your vehicle.",
+      title: (reg: string) => `High Priority Alert — ${reg}`,
+      body: (reg: string) =>
+        `You have received a high priority alert regarding your vehicle ${reg}.`,
     },
     hi: {
-      title: "उच्च प्राथमिकता अलर्ट",
-      body: "आपको अपने वाहन के संबंध में उच्च प्राथमिकता अलर्ट प्राप्त हुआ है।",
+      title: (reg: string) => `उच्च प्राथमिकता अलर्ट — ${reg}`,
+      body: (reg: string) =>
+        `आपको अपने वाहन ${reg} के संबंध में उच्च प्राथमिकता अलर्ट प्राप्त हुआ है।`,
     },
     mr: {
-      title: "उच्च प्राधान्य इशारा",
-      body: "तुम्हाला तुमच्या वाहनासंदर्भात उच्च प्राधान्य इशारा मिळाला आहे.",
+      title: (reg: string) => `उच्च प्राधान्य इशारा — ${reg}`,
+      body: (reg: string) =>
+        `तुम्हाला तुमच्या वाहन ${reg} संदर्भात उच्च प्राधान्य इशारा मिळाला आहे.`,
     },
   },
   ALERT_LOW: {
     en: {
-      title: "Low Priority Alert",
-      body: "You have received a low priority alert regarding your vehicle.",
+      title: (reg: string) => `Low Priority Alert — ${reg}`,
+      body: (reg: string) =>
+        `You have received a low priority alert regarding your vehicle ${reg}.`,
     },
     hi: {
-      title: "कम प्राथमिकता अलर्ट",
-      body: "आपको अपने वाहन के संबंध में कम प्राथमिकता अलर्ट प्राप्त हुआ है।",
+      title: (reg: string) => `कम प्राथमिकता अलर्ट — ${reg}`,
+      body: (reg: string) =>
+        `आपको अपने वाहन ${reg} के संबंध में कम प्राथमिकता अलर्ट प्राप्त हुआ है।`,
     },
     mr: {
-      title: "कमी प्राधान्य इशारा",
-      body: "तुम्हाला तुमच्या वाहनासंदर्भात कमी प्राधान्य इशारा मिळाला आहे.",
+      title: (reg: string) => `कमी प्राधान्य इशारा — ${reg}`,
+      body: (reg: string) =>
+        `तुम्हाला तुमच्या वाहन ${reg} संदर्भात कमी प्राधान्य इशारा मिळाला आहे.`,
     },
   },
   ALERT_ACKNOWLEDGED: {
@@ -99,11 +105,9 @@ export const getTranslation = (
   language: SupportedLanguage = "en",
   params?: any,
 ): { title: string; body: string } => {
-  // ← Changed return type to always be strings
   const notificationType = translations[type];
 
   if (!notificationType) {
-    // Fallback to English if type not found
     return {
       title: "Notification",
       body: "You have a new notification",
@@ -112,16 +116,15 @@ export const getTranslation = (
 
   const translation = notificationType[language] || notificationType["en"];
 
-  // Handle dynamic content (e.g., registration number)
-  if (typeof translation.body === "function") {
-    return {
-      title: translation.title,
-      body: translation.body(params || ""),
-    };
-  }
+  const title =
+    typeof translation.title === "function"
+      ? translation.title(params || "")
+      : translation.title;
 
-  return {
-    title: translation.title,
-    body: translation.body,
-  };
+  const body =
+    typeof translation.body === "function"
+      ? translation.body(params || "")
+      : translation.body;
+
+  return { title, body };
 };

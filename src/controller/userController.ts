@@ -503,10 +503,15 @@ export const searchVehicle = async (req: Request, res: Response) => {
 export const initiateAlert = async (req: Request, res: Response) => {
   try {
     const { userId } = req.user as any;
-    const { priorityHigh, receiverId } = req.body;
+    const { priorityHigh, receiverId, registrationNumber } = req.body;
 
     if (!receiverId) {
       return BADREQUEST(res, "Receiver ID is required");
+    }
+
+    if (!registrationNumber) {
+      // ✅ new validation
+      return BADREQUEST(res, "Vehicle registration is required");
     }
 
     if (String(receiverId) === String(userId)) {
@@ -563,8 +568,16 @@ export const initiateAlert = async (req: Request, res: Response) => {
 
     const language = receiverSettings?.preferredLanguage || "en";
     const notificationType = priorityHigh ? "ALERT_HIGH" : "ALERT_LOW";
-    const translation = getTranslation(notificationType, language);
-    const englishTranslation = getTranslation(notificationType, "en");
+    const translation = getTranslation(
+      notificationType,
+      language,
+      registrationNumber,
+    );
+    const englishTranslation = getTranslation(
+      notificationType,
+      "en",
+      registrationNumber,
+    );
 
     await NotificationModel.create({
       userId: receiverId,
@@ -572,6 +585,7 @@ export const initiateAlert = async (req: Request, res: Response) => {
       title: englishTranslation.title,
       body: englishTranslation.body,
       senderId: userId,
+      registrationNumber, // ✅ new field, matches VEHICLE_SEARCHED pattern
     });
 
     if (
