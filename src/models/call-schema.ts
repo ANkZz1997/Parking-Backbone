@@ -5,7 +5,11 @@ const CallSchema = new Schema(
     callId: { type: String, required: true, unique: true },
 
     callerId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-    receiverId: { type: Schema.Types.ObjectId, ref: "User"},
+    receiverId: { type: Schema.Types.ObjectId, ref: "User" },
+
+    // ✅ NEW — captured at call-creation time, used as fallback in getCallRecords
+    callerNameSnapshot: { type: String, default: null },
+    receiverNameSnapshot: { type: String, default: null },
 
     status: {
       type: String,

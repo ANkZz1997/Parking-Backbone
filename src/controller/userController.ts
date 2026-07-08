@@ -389,20 +389,13 @@ export const searchVehicle = async (req: Request, res: Response) => {
     }
 
     const checkData = resolvedOwner.doc;
-    const { fullName, image, _id, blockedUsers } = checkData.userId as any;
+    const { fullName, image, _id } = checkData.userId as any;
+    // ✅ blockedUsers destructure and isBlocked check removed —
+    // reporting a user should stop them from contacting you,
+    // not hide their vehicle from your own search.
 
     const receiverSettings = await userSettingsModel.findOne({ userId: _id });
     if (receiverSettings?.profileVisibility === false) {
-      return BADREQUEST(res, "Vehicle not found");
-    }
-
-    const isBlocked =
-      blockedUsers?.some(
-        (blockedId: mongoose.Types.ObjectId) =>
-          String(blockedId) === String(userId),
-      ) ?? false;
-
-    if (isBlocked) {
       return BADREQUEST(res, "Vehicle not found");
     }
 
@@ -679,12 +672,22 @@ export const updateCallStatus = async (req: Request, res: Response) => {
         return BADREQUEST(res, "Receiver not found");
       }
 
+      // ✅ NEW — fetch caller's name for snapshot (receiver's fullName already
+      // available from receiverUser fetched above)
+      const callerUser = (await userModel
+        .findById(userId)
+        .select("fullName")
+        .lean()) as any;
+
       const newCall = await callModel.create({
         callId: uuidv4(),
         callerId: userId,
         receiverId,
         status: "INITIATED",
         registrationNumber: normalizeRegistration(registrationNumber) || null,
+        // ✅ NEW — permanent snapshot, survives future changes to either user
+        callerNameSnapshot: callerUser?.fullName || null,
+        receiverNameSnapshot: receiverUser?.fullName || null,
       });
 
       return OK(res, { callId: newCall.callId });
@@ -851,10 +854,27 @@ export const getCallRecords = async (req: Request, res: Response) => {
     const reportedSet = new Set(reportedCallIds.map(String));
 
     const records = calls.map((call: any) => {
-      const isOutgoing = call.callerId?._id?.toString() === userId.toString();
+      // ✅ Resolve ids without relying on populate succeeding
+      const callerIdStr =
+        typeof call.callerId === "object" && call.callerId?._id
+          ? String(call.callerId._id)
+          : String(call.callerId);
+
+      const isOutgoing = callerIdStr === String(userId);
       const plateNumber = call.registrationNumber ?? null;
-      const otherParty = isOutgoing ? call.receiverId : call.callerId;
-      const otherName: string = otherParty?.fullName || "Unknown";
+
+      const otherPartyPopulated = isOutgoing ? call.receiverId : call.callerId;
+      const otherPartySnapshot = isOutgoing
+        ? call.receiverNameSnapshot
+        : call.callerNameSnapshot;
+
+      // ✅ Fallback chain: live populate → stored snapshot → "Unknown"
+      const otherName: string =
+        (typeof otherPartyPopulated === "object" &&
+          otherPartyPopulated?.fullName) ||
+        otherPartySnapshot ||
+        "Unknown";
+
       const initials = otherName
         .trim()
         .split(" ")
